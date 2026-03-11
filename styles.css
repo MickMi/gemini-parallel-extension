@@ -119,10 +119,19 @@ body.parallel-open [component="navbar"] {
 
 /* ---- 侧边栏顶部和关闭按钮样式 ---- */
 #gemini-sidebar-header {
-    position: absolute; 
-    width: 100%;
-    height: 0;
-    z-index: 100;
+    position: absolute !important;
+    top: 16px !important; 
+    left: 0 !important; 
+    right: 0 !important;
+    width: 100% !important;
+    height: 40px !important;
+    background: transparent !important;
+    pointer-events: none !important; /* 整体穿透，不挡底层 */
+    z-index: 1000 !important;
+    display: flex !important;
+    justify-content: center !important; /* 【核心修复】：让内部组件在侧边栏水平居中 */
+    align-items: center !important;
+    gap: 12px !important; /* 关闭按钮和标题胶囊之间的间距 */
 }
 
 /* ---- 修正：将关闭按钮移至左上角，避开原生头像 ---- */
@@ -325,15 +334,30 @@ body {
 /* 【全新重构】：时间轴系统 v2.0                                                */
 /* ========================================================================= */
 
+/* ---- 修复：时间轴与侧边栏的共存排布 ---- */
+/* ---- 终极修复：时间轴与侧边栏的绝对共存 ---- */
 #gemini-timeline-container {
-    position: fixed;
-    right: 30px; 
-    top: 120px; 
-    bottom: 120px; 
-    width: 20px;
-    z-index: 9999; /* 极高层级，确保不被隐藏 */
-    pointer-events: none; /* 容器本体不阻挡鼠标 */
-    transition: opacity 0.3s;
+    position: fixed !important;
+    right: 30px !important; /* 初始位置死死钉在右侧 30px */
+    
+    /* 【核心修复 1】：放弃修改 right，改用 GPU 加速的 transform 强制向左推移。
+       当侧边栏打开时（变量有值），它会被强制向左平移侧边栏的宽度 */
+    transform: translateX(calc(-1 * var(--parallel-sidebar-width, 0px))) !important;
+    
+    top: 120px !important; 
+    bottom: 120px !important; 
+    width: 30px !important; 
+    
+    /* 【核心修复 2】：祭出前端最高层级 2147483647，神挡杀神，绝对不会被任何侧边栏盖住 */
+    z-index: 2147483647 !important; 
+    pointer-events: auto !important; 
+    
+    /* 平滑的避让动画 */
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important; 
+    
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
 
 #gemini-timeline-track {
@@ -432,3 +456,114 @@ body {
     font-size: 13px; color: #1f1f1f; line-height: 1.5;
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; 
 }
+/* ========================================================================= */
+/* 全新产品形态：双窗口独立悬浮标题 (中控台)                                     */
+/* ========================================================================= */
+
+/* 1. 当平行模式开启时，直接隐藏掉原生的碍事标题 */
+body.parallel-open .conversation-title-container {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ========================================================================= */
+/* 全新产品形态：中央灵动岛中控 + 侧边栏对称浮窗                                 */
+/* ========================================================================= */
+
+body.parallel-open .conversation-title-container {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* 1. 抽离出共用的“浮窗胶囊”外观规范，保证主侧窗口绝对一致 */
+#gemini-main-floating-title,
+#gemini-sidebar-floating-title {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+    border-radius: 24px !important;
+    padding: 6px 16px !important;
+    display: flex !important; 
+    align-items: center !important;
+    gap: 10px !important;
+    z-index: 1000 !important;
+    transition: left 0.3s ease, max-width 0.3s ease !important;
+    pointer-events: auto !important; 
+}
+
+/* 共用的内部文字与图标规范 */
+.gemini-float-title-icon { font-size: 14px !important; }
+.gemini-float-title-text {
+    font-size: 13px !important; font-weight: 500 !important; color: #202124 !important;
+    white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
+}
+.gemini-float-title-action {
+    color: #5f6368 !important; cursor: pointer !important; font-size: 16px !important; 
+    padding: 0 4px !important; border-radius: 4px !important; display: flex !important; align-items: center !important;
+}
+.gemini-float-title-action:hover { background: #f1f3f4 !important; color: #202124 !important; }
+
+/* 2. 主窗口浮窗的独立定位（基于视口） */
+#gemini-main-floating-title {
+    position: fixed !important;
+    top: 16px !important;
+    left: calc((100vw - var(--parallel-sidebar-width, 450px)) / 2) !important;
+    transform: translateX(-50%) !important; 
+    max-width: 40% !important;
+    display: none !important; /* 默认隐藏，由 body class 触发 */
+}
+body.parallel-open #gemini-main-floating-title { display: flex !important; }
+
+/* 3. 侧边栏顶部 Header 容器：作为虚拟点击穿透层 */
+#gemini-sidebar-header {
+    position: absolute !important;
+    top: 16px !important; 
+    left: 0 !important; 
+    right: 0 !important;
+    width: 100% !important;
+    height: 40px !important;
+    background: transparent !important;
+    pointer-events: none !important; /* 整体穿透，不挡底层 */
+    z-index: 1000 !important;
+    display: flex !important;
+    justify-content: center !important; /* 【核心修复】：让内部组件在侧边栏水平居中 */
+    align-items: center !important;
+    gap: 12px !important; /* 关闭按钮和标题胶囊之间的间距 */
+}
+
+/* 4. 侧边栏浮窗的独立定位（基于侧边栏内部居中） */
+#gemini-sidebar-floating-title {
+    position: static !important; /* 取消原本的居中 transform，交给父级 flex 管 */
+    transform: none !important;
+    max-width: 60% !important;
+}
+
+/* 5. 侧边栏关闭按钮：剥离出来，固定在左上角 */
+#gemini-close-sidebar {
+    position: static !important; /* 取消左上角死板定位 */
+    pointer-events: auto !important; 
+    margin: 0 !important;
+}
+
+/* 圆形毛玻璃按钮基础类 */
+.gemini-action-glass-btn {
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    width: 32px !important; height: 32px !important;
+    box-sizing: border-box !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(8px) !important; -webkit-backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    border-radius: 50% !important; 
+    color: #5f6368 !important; cursor: pointer !important; font-size: 14px !important;
+    transition: all 0.2s ease !important; flex-shrink: 0 !important;
+}
+.gemini-action-glass-btn:hover {
+    background: rgba(255, 255, 255, 1) !important; color: #202124 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important; transform: scale(1.05) !important;
+}
+
+/* 解除侧边栏的内容压迫 */
+#gemini-ghost-frame { padding-top: 0 !important; }
+#gemini-search-results-container { padding-top: 64px !important; }

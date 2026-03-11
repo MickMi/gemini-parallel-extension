@@ -5,6 +5,7 @@ let floatingMenu = null;
 let currentSelectedText = ""; 
 let pendingConfirmAction = null; 
 let isHoveringTimeline = false;
+let titlePollInterval = null; // 【新增】：用于实时捕获标题的计时器
 
 // ==========================================
 // 1. 划词双选菜单模块
@@ -28,6 +29,7 @@ document.addEventListener('mousedown', (event) => {
     }
 });
 
+// 【核心修复】：升级带有“边缘碰撞检测”的菜单呼出逻辑
 function showFloatingMenu(x, y) {
     if (!floatingMenu) {
         floatingMenu = document.createElement('div');
@@ -38,7 +40,6 @@ function showFloatingMenu(x, y) {
         `;
         document.body.appendChild(floatingMenu);
 
-        // 绑定两个不同的核心入口
         document.getElementById('btn-mode-chat').addEventListener('click', () => {
             openSidebar(currentSelectedText, 'chat'); 
             hideFloatingMenu();
@@ -48,9 +49,43 @@ function showFloatingMenu(x, y) {
             hideFloatingMenu();
         });
     }
-    floatingMenu.style.left = `${x + 10}px`;
-    floatingMenu.style.top = `${y + 10}px`;
+    
+    // 先设为透明并显示，以获取真实的物理尺寸
+    floatingMenu.style.visibility = 'hidden';
     floatingMenu.style.display = 'flex';
+    
+    // 如果获取不到，给个默认安全宽度 240px
+    const menuWidth = floatingMenu.offsetWidth || 240; 
+    const menuHeight = floatingMenu.offsetHeight || 42;
+    
+    // 【核心修复 1】：探查侧边栏是否开启，并获取其当前真实宽度
+    const isSidebarOpen = document.body.classList.contains('parallel-open');
+    let sidebarWidth = 0;
+    if (isSidebarOpen) {
+        const rootStyle = getComputedStyle(document.documentElement);
+        // 读取 CSS 变量并转为数字，如果没有则默认 450
+        sidebarWidth = parseInt(rootStyle.getPropertyValue('--parallel-sidebar-width')) || 450;
+    }
+    
+    // 【核心修复 2】：计算真正的“右侧叹息之墙”（屏幕总宽 - 侧边栏宽度 - 20px安全边距）
+    const safeRightEdge = window.innerWidth - sidebarWidth - 20;
+    
+    let finalX = x + 10;
+    let finalY = y + 10;
+    
+    // 碰撞检测：如果向右弹出会撞到侧边栏或屏幕边缘，强行翻转到鼠标左侧！
+    if (finalX + menuWidth > safeRightEdge) {
+        finalX = x - menuWidth - 10;
+    }
+    
+    // 碰撞检测：底部检测保持不变
+    if (finalY + menuHeight > window.innerHeight - 20) {
+        finalY = y - menuHeight - 10;
+    }
+    
+    floatingMenu.style.left = `${finalX}px`;
+    floatingMenu.style.top = `${finalY}px`;
+    floatingMenu.style.visibility = 'visible';
 }
 
 function hideFloatingMenu() {
@@ -76,6 +111,29 @@ function closeSidebar() {
         const iframe = document.getElementById('gemini-ghost-frame');
         if (iframe) iframe.src = 'about:blank';
     }
+    // 【新增】：关闭侧边栏时，停止标题捕获，节省性能
+    if (titlePollInterval) clearInterval(titlePollInterval);
+}
+
+// 【全新增】：渲染主窗口的悬浮标题
+function renderMainFloatingTitle() {
+    let floatingTitle = document.getElementById('gemini-main-floating-title');
+    if (!floatingTitle) {
+        floatingTitle = document.createElement('div');
+        floatingTitle.id = 'gemini-main-floating-title';
+        document.body.appendChild(floatingTitle);
+    }
+    
+    // 去原生界面里“偷”当前对话的标题
+    const titleNode = document.querySelector('[data-test-id="conversation-title"]');
+    const actualTitle = titleNode ? titleNode.innerText.trim() : '主干对话';
+
+    // 注入 UI，包含预留的拓展菜单 (⋮)
+    floatingTitle.innerHTML = `
+        <span class="gemini-float-title-icon">💬</span>
+        <span class="gemini-float-title-text" title="${actualTitle}">${actualTitle}</span>
+        <span class="gemini-float-title-action" title="更多功能">⋮</span>
+    `;
 }
 
 function mergeToMain() {
@@ -108,14 +166,22 @@ function openSidebar(textContext, mode) {
         document.body.appendChild(sidebar);
     }
 
-    // 【防串台核心】：每次打开前，无情清空侧边栏里的所有旧代码
     sidebar.innerHTML = '';
+
+    // 【核心联动】：呼出侧边栏的同时，生成主窗口的悬浮胶囊
+    renderMainFloatingTitle();
 
     if (mode === 'chat') {
         sidebar.innerHTML = `
             <div id="gemini-sidebar-resizer"></div>
             <div id="gemini-sidebar-header">
-                <span id="gemini-close-sidebar" title="关闭平行分支">✖</span>
+                <div id="gemini-close-sidebar" class="gemini-action-glass-btn" title="关闭分支">✖</div>
+                
+                <div id="gemini-sidebar-floating-title">
+                    <span class="gemini-float-title-icon">💡</span>
+                    <span class="gemini-float-title-text">平行推演分支</span>
+                    <span class="gemini-float-title-action" title="更多">⋮</span>
+                </div>
             </div>
             <iframe id="gemini-ghost-frame" src="${getTargetUrl()}"></iframe>
             <div id="gemini-sidebar-actions">
@@ -132,14 +198,40 @@ function openSidebar(textContext, mode) {
             if (iframe.src === 'about:blank') return;
             injectCSSIntoIframe(iframe.contentDocument || iframe.contentWindow.document);
             injectTextAndSend(iframe, textContext);
+            
+            // 【全新增】：启动标题实时同步引擎
+            if (titlePollInterval) clearInterval(titlePollInterval);
+            titlePollInterval = setInterval(() => {
+                try {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    // 偷偷去 iframe 里寻找原生的标题元素
+                    const titleNode = iframeDoc.querySelector('[data-test-id="conversation-title"]');
+                    if (titleNode && titleNode.innerText.trim()) {
+                        const newTitle = titleNode.innerText.trim();
+                        const titleSpan = document.querySelector('#gemini-sidebar-floating-title .gemini-float-title-text');
+                        
+                        // 如果标题有变化，且不是空值，就立刻更新外层胶囊
+                        if (titleSpan && titleSpan.innerText !== newTitle) {
+                            titleSpan.innerText = newTitle;
+                            titleSpan.title = newTitle; // 鼠标悬停显示完整长标题
+                        }
+                    }
+                } catch (e) {
+                    // 跨域或未加载完时静默忽略
+                }
+            }, 1000); // 每 1 秒检查一次
         };
     } else if (mode === 'search') {
         sidebar.innerHTML = `
             <div id="gemini-sidebar-resizer"></div>
-            <div id="gemini-sidebar-header" style="justify-content: space-between; padding-left: 48px; border-bottom: 1px solid #e0e0e0; background: #f8f9fa;">
-                <span id="gemini-close-sidebar" title="关闭搜索">✖</span>
-                <span style="font-size: 14px; font-weight: 500; color: #202124;">🔍 搜索：${textContext.substring(0, 15)}${textContext.length > 15 ? '...' : ''}</span>
-                <span style="width: 20px;"></span> 
+            <div id="gemini-sidebar-header">
+                <div id="gemini-close-sidebar" class="gemini-action-glass-btn" title="关闭搜索">✖</div>
+                
+                <div id="gemini-sidebar-floating-title">
+                    <span class="gemini-float-title-icon">🔍</span>
+                    <span class="gemini-float-title-text">搜索：${textContext}</span>
+                    <span class="gemini-float-title-action" title="更多">⋮</span>
+                </div>
             </div>
             <div id="gemini-search-results-container">
                 <div class="gemini-loading-text">正在从 Google 获取结果... 🕵️‍♂️</div>
@@ -157,8 +249,6 @@ function openSidebar(textContext, mode) {
             }
         });
     }
-
-    // 重新绑定拖拽，修复搜索模式下无 iframe 导致的报错
     initResizer(sidebar);
 
     setTimeout(() => {
@@ -263,9 +353,10 @@ function injectTextAndSend(iframe, textContext) {
     }, 500);
 }
 
+// 优化版：iframe 与拖拽辅助模块
 function initResizer(sidebar) {
     const resizer = document.getElementById('gemini-sidebar-resizer');
-    const iframe = document.getElementById('gemini-ghost-frame'); // 搜索模式下为 null，不再报错
+    const iframe = document.getElementById('gemini-ghost-frame'); 
     let isResizing = false;
     
     if (!resizer) return;
@@ -273,20 +364,30 @@ function initResizer(sidebar) {
     resizer.addEventListener('mousedown', (e) => {
         isResizing = true;
         if (iframe) iframe.classList.add('iframe-dragging');
+        
+        // 【核心新增】：打上拖拽状态标签，立刻关闭页面上所有元素的 transition 动画防卡顿
+        document.body.classList.add('parallel-dragging'); 
         document.body.style.transition = 'none';
+        
         e.preventDefault(); 
     });
+    
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
         const newWidth = window.innerWidth - e.clientX;
+        // 限制侧边栏的最小宽度 300px 和最大宽度 800px
         if (newWidth > 300 && newWidth < 800) {
             document.documentElement.style.setProperty('--parallel-sidebar-width', `${newWidth}px`);
         }
     });
+    
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
             if (iframe) iframe.classList.remove('iframe-dragging');
+            
+            // 【核心新增】：拖拽结束，移除标签，恢复所有平滑动画
+            document.body.classList.remove('parallel-dragging'); 
             document.body.style.transition = 'width 0.3s ease';
         }
     });
