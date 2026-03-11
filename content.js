@@ -459,7 +459,8 @@ function showConfirmDialog(actionType, customAction = null) {
         desc.textContent = '当前分支对话将被永久清空。这不会对您的主干对话产生任何影响，相当于无事发生。';
         okBtn.style.backgroundColor = '#d93025'; 
         okBtn.textContent = '确认遗忘';
-        pendingConfirmAction = () => { closeSidebar(); };
+        // 【核心修改】：将 closeSidebar 替换为真正的物理销毁引擎
+        pendingConfirmAction = () => { executeForgetBranch(); }; 
     } else if (actionType === 'merge') {
         title.textContent = '✨ 确认合并至主干？';
         desc.textContent = '我们将自动提取本分支中 AI 的最后一次回答，并作为上下文填入主页面的输入框中。';
@@ -581,3 +582,103 @@ function renderTimeline() {
 }
 
 setInterval(renderTimeline, 2000);
+
+// 【全新增】：核心销毁引擎，利用 DOM 自动化模拟真人物理删除
+// 【终极重构】：带视觉伪装和异步状态机的高级物理销毁引擎
+// 【V3 终极版】：注入式静默删除引擎
+async function executeForgetBranch() {
+    const iframe = document.getElementById('gemini-ghost-frame');
+    if (!iframe) { closeSidebar(); return; }
+
+    const forgetBtn = document.getElementById('gemini-btn-forget');
+    if (forgetBtn) forgetBtn.innerHTML = '⏳ 正在物理抹除...';
+
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+
+        // 1. 强制 UI 环境渲染
+        const style = doc.createElement('style');
+        style.textContent = `
+            navigation-drawer, .v-st-container, header, nav { 
+                display: block !important; 
+                visibility: visible !important; 
+                opacity: 1 !important; 
+                pointer-events: auto !important;
+            }
+        `;
+        doc.head.appendChild(style);
+
+        const humanClick = (el) => {
+            if (!el) return;
+            const opts = { view: iframe.contentWindow, bubbles: true, cancelable: true, buttons: 1 };
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+        };
+
+        // --- 执行流 ---
+
+        // A. 唤起侧边栏
+        const menuBtn = doc.querySelector('button[aria-label*="Menu" i], button[aria-label*="菜单" i]');
+        if (menuBtn) humanClick(menuBtn);
+        await new Promise(r => setTimeout(r, 800));
+
+        // B. 【核心逻辑更新】：精准锁定 Selected 对话项的兄弟操作按钮
+        const findTargetMenuBtn = () => {
+            // 首先找到被选中的那个对话链接 (class 中包含 selected)
+            const selectedConversation = doc.querySelector('a[data-test-id="conversation"].selected');
+            
+            if (selectedConversation) {
+                // 根据你提供的 HTML，按钮容器是 <a> 的下一个兄弟节点
+                const actionsContainer = selectedConversation.nextElementSibling;
+                if (actionsContainer && actionsContainer.classList.contains('conversation-actions-container')) {
+                    return actionsContainer.querySelector('[data-test-id="actions-menu-button"]');
+                }
+            }
+            
+            // 兜底方案：直接抓列表里第一个出现的按钮
+            return doc.querySelector('navigation-drawer [data-test-id="actions-menu-button"]');
+        };
+
+        const targetBtn = findTargetMenuBtn();
+        
+        if (!targetBtn) {
+            throw new Error("未能定位到操作菜单按钮");
+        }
+
+        // 给选中的按钮一个视觉反馈
+        targetBtn.style.outline = '3px solid #1a73e8';
+        humanClick(targetBtn);
+        
+        // C. 点击删除按钮 ( data-test-id="delete-button" )
+        // 菜单弹出通常需要一点时间加载到 Body 根部
+        let deleteBtn = null;
+        for(let i=0; i<10; i++) { // 循环嗅探 1 秒
+            deleteBtn = doc.querySelector('[data-test-id="delete-button"]');
+            if (deleteBtn) break;
+            await new Promise(r => setTimeout(r, 100));
+        }
+        
+        if (!deleteBtn) throw new Error("未弹出删除选项");
+        humanClick(deleteBtn);
+
+        // D. 最终确认弹窗
+        await new Promise(r => setTimeout(r, 600));
+        const confirmBtn = Array.from(doc.querySelectorAll('button')).find(b => 
+            (b.innerText.includes('Delete') || b.innerText.includes('删除')) && 
+            (b.offsetWidth > 0 || b.classList.contains('filled-button'))
+        );
+
+        if (confirmBtn) {
+            humanClick(confirmBtn);
+            await new Promise(r => setTimeout(r, 1500)); // 等待云端同步
+            if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘分支';
+            closeSidebar();
+        }
+
+    } catch (error) {
+        console.warn("自动化销毁失败:", error.message);
+        if (forgetBtn) forgetBtn.innerHTML = '⚠️ 自动失败，请补刀';
+        iframe.style.opacity = '1';
+    }
+}
