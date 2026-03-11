@@ -1,71 +1,115 @@
-/* 针对我们刚才创建的按钮 ID 设置样式 */
+/* ---- 【全新增】：定义全局 CSS 变量，用于统一控制分屏宽度 ---- */
+:root {
+    --parallel-sidebar-width: 0px;
+}
+
+/* 主页面分屏时的状态 */
+body.parallel-open {
+    width: calc(100vw - var(--parallel-sidebar-width)) !important;
+    overflow-x: hidden;
+}
+
+/* 【核心修复】：强制主页面的顶栏（以及其他可能固定在顶部的元素）同步缩进 */
+body.parallel-open header,
+body.parallel-open [component="navbar"] {
+    width: calc(100vw - var(--parallel-sidebar-width)) !important;
+    right: auto !important;
+}
+
+/* ---- 悬浮按钮样式 ---- */
 #gemini-parallel-btn {
-    position: absolute; /* 绝对定位，这样才能跟随鼠标位置 */
-    z-index: 999999; /* 层级设置得非常高，防止被 Gemini 原本的网页元素遮挡 */
+    position: absolute;
+    z-index: 999999;
     padding: 8px 12px;
-    background-color: #1a73e8; /* 经典的 Google 蓝 */
+    background-color: #1a73e8;
     color: white;
     border: none;
-    border-radius: 6px; /* 圆角 */
+    border-radius: 6px;
     font-size: 14px;
-    cursor: pointer; /* 鼠标放上去变成小手 */
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1); /* 加一点阴影更有立体感 */
-    display: none; /* 默认状态是隐藏的 */
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: none;
 }
 
-/* 鼠标悬停在按钮上的交互效果 */
 #gemini-parallel-btn:hover {
-    background-color: #1557b0; /* 颜色稍微加深 */
+    background-color: #1557b0;
 }
 
-
-/* ---- 新增：侧边栏容器样式 ---- */
+/* ---- 侧边栏容器样式 ---- */
 #gemini-parallel-sidebar {
-    position: fixed; /* 固定在屏幕上 */
+    position: fixed;
     top: 0;
-    right: -450px; /* 默认隐藏在屏幕右侧外面 */
-    width: 400px; /* 侧边栏的宽度 */
-    height: 100vh; /* 占满屏幕高度 */
-    background: #ffffff;
-    box-shadow: -4px 0 15px rgba(0,0,0,0.1);
-    z-index: 1000000; /* 保证它在最顶层 */
-    transition: right 0.3s ease; /* 滑出的动画效果 */
+    right: calc(var(--parallel-sidebar-width) * -1.5); /* 默认隐藏在屏幕右侧外面 */
+    width: var(--parallel-sidebar-width);
+    height: 100vh;
+    background: #f0f4f9; 
+    box-shadow: none; 
+    border-left: 1px solid #dadce0; 
+    z-index: 1000000;
+    transition: right 0.3s ease, width 0s; /* 优化动画 */
     display: flex;
     flex-direction: column;
 }
 
-/* 当侧边栏需要展示时，添加这个 class 就能让它滑进来 */
 #gemini-parallel-sidebar.open {
     right: 0;
 }
 
-/* 侧边栏的顶部标题区域 */
+/* ---- 侧边栏顶部和关闭按钮样式 ---- */
 #gemini-sidebar-header {
-    padding: 12px 16px;
-    background: #f8f9fa;
-    display: flex;
-    justify-content: space-between; /* 标题居左，关闭按钮居右 */
-    align-items: center;
-    border-bottom: 1px solid #dadce0;
-    font-size: 14px;
-    font-weight: 500;
-    color: #202124;
+    position: absolute; 
+    width: 100%;
+    height: 0;
+    z-index: 100;
 }
 
-/* 关闭按钮样式 */
 #gemini-close-sidebar {
     cursor: pointer;
     color: #5f6368;
-    padding: 4px;
+    padding: 6px 10px;
+    font-size: 16px;
+    position: absolute;
+    top: 16px; 
+    right: 16px;
+    background: rgba(255, 255, 255, 0.6); 
+    backdrop-filter: blur(4px); 
+    border-radius: 50%; 
+    border: 1px solid #dadce0;
 }
 
 #gemini-close-sidebar:hover {
-    color: #d93025; /* 鼠标悬停变红 */
+    background: rgba(255, 255, 255, 1);
+    color: #d93025;
 }
 
-/* 嵌入的 iframe 样式，让它填满剩余空间 */
 #gemini-ghost-frame {
     flex-grow: 1;
     border: none;
     width: 100%;
+}
+
+/* ---- 拖拽相关样式 ---- */
+#gemini-sidebar-resizer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    cursor: ew-resize;
+    background-color: transparent;
+    z-index: 10;
+}
+
+#gemini-sidebar-resizer:hover {
+    background-color: #1a73e8; 
+}
+
+.iframe-dragging {
+    pointer-events: none;
+}
+
+/* 主页面过渡 */
+body {
+    transition: width 0.3s ease;
+    overflow-x: hidden;
 }
