@@ -5,8 +5,21 @@
   "description": "选中文本，开启平行的 Gemini 对话分支",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "declarativeNetRequest"
   ],
+  "host_permissions": [
+    "*://gemini.google.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "remove-frame-options",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "content_scripts": [
     {
       "matches": ["https://gemini.google.com/*"],

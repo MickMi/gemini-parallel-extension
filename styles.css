@@ -17,3 +17,55 @@
 #gemini-parallel-btn:hover {
     background-color: #1557b0; /* 颜色稍微加深 */
 }
+
+
+/* ---- 新增：侧边栏容器样式 ---- */
+#gemini-parallel-sidebar {
+    position: fixed; /* 固定在屏幕上 */
+    top: 0;
+    right: -450px; /* 默认隐藏在屏幕右侧外面 */
+    width: 400px; /* 侧边栏的宽度 */
+    height: 100vh; /* 占满屏幕高度 */
+    background: #ffffff;
+    box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+    z-index: 1000000; /* 保证它在最顶层 */
+    transition: right 0.3s ease; /* 滑出的动画效果 */
+    display: flex;
+    flex-direction: column;
+}
+
+/* 当侧边栏需要展示时，添加这个 class 就能让它滑进来 */
+#gemini-parallel-sidebar.open {
+    right: 0;
+}
+
+/* 侧边栏的顶部标题区域 */
+#gemini-sidebar-header {
+    padding: 12px 16px;
+    background: #f8f9fa;
+    display: flex;
+    justify-content: space-between; /* 标题居左，关闭按钮居右 */
+    align-items: center;
+    border-bottom: 1px solid #dadce0;
+    font-size: 14px;
+    font-weight: 500;
+    color: #202124;
+}
+
+/* 关闭按钮样式 */
+#gemini-close-sidebar {
+    cursor: pointer;
+    color: #5f6368;
+    padding: 4px;
+}
+
+#gemini-close-sidebar:hover {
+    color: #d93025; /* 鼠标悬停变红 */
+}
+
+/* 嵌入的 iframe 样式，让它填满剩余空间 */
+#gemini-ghost-frame {
+    flex-grow: 1;
+    border: none;
+    width: 100%;
+}
