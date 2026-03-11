@@ -63,18 +63,22 @@ body.parallel-open [component="navbar"] {
     z-index: 100;
 }
 
+/* ---- 修正：将关闭按钮移至左上角，避开原生头像 ---- */
 #gemini-close-sidebar {
     cursor: pointer;
     color: #5f6368;
     padding: 6px 10px;
     font-size: 16px;
     position: absolute;
-    top: 16px; 
-    right: 16px;
+    /* 【核心修正】：定位在侧边栏最左侧，高度刚好在头像框下方、时间轴上方 */
+    top: 76px; 
+    left: 16px; 
+    right: auto;
     background: rgba(255, 255, 255, 0.6); 
     backdrop-filter: blur(4px); 
     border-radius: 50%; 
     border: 1px solid #dadce0;
+    z-index: 1000;
 }
 
 #gemini-close-sidebar:hover {
@@ -163,16 +167,42 @@ body {
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 /* ---- 【全新增】：二次确认弹窗样式 ---- */
+/* ---- 【全局升级】：二次确认弹窗样式 ---- */
 #gemini-confirm-dialog {
-    position: absolute;
+    position: fixed; /* 从 absolute 改为 fixed，确保永远基于屏幕全屏居中 */
     top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(5px);
-    z-index: 2000;
-    display: none; /* 默认隐藏 */
+    z-index: 999999; /* 极高层级，必须盖过侧边栏和时间轴 */
+    display: none; 
     align-items: center;
     justify-content: center;
 }
+
+.gemini-confirm-box {
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    width: 80%;
+    max-width: 320px;
+    text-align: center;
+    border: 1px solid #e0e0e0;
+}
+
+#gemini-confirm-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: #202124; }
+#gemini-confirm-desc { font-size: 13px; color: #5f6368; margin-bottom: 20px; line-height: 1.5; }
+
+.gemini-confirm-btns { display: flex; gap: 12px; justify-content: center; }
+
+.gemini-confirm-btn {
+    border: none; border-radius: 8px; padding: 8px 16px; 
+    cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;
+}
+
+#gemini-confirm-cancel { background: #f1f3f4; color: #3c4043; }
+#gemini-confirm-cancel:hover { background: #e8eaed; }
+#gemini-confirm-ok { color: white; background: #1a73e8; }
 
 .gemini-confirm-box {
     background: white;
@@ -228,4 +258,115 @@ body {
     color: white; 
     /* 默认蓝色，将在 JS 中根据不同操作动态改变颜色 */
     background: #1a73e8; 
+}
+/* ========================================================================= */
+/* 【全新重构】：时间轴系统 v2.0                                                */
+/* ========================================================================= */
+
+#gemini-timeline-container {
+    position: fixed;
+    right: 30px; 
+    top: 120px; 
+    bottom: 120px; 
+    width: 20px;
+    z-index: 9999; /* 极高层级，确保不被隐藏 */
+    pointer-events: none; /* 容器本体不阻挡鼠标 */
+    transition: opacity 0.3s;
+}
+
+#gemini-timeline-track {
+    position: absolute;
+    left: 9px; 
+    top: 0; 
+    bottom: 0; 
+    width: 2px;
+    background: #dadce0;
+}
+
+.gemini-node {
+    position: absolute;
+    left: 4px; /* 让 12px 的圆点居中在 2px 的轨道上 */
+    width: 12px; 
+    height: 12px;
+    border-radius: 50%;
+    background: #a8c7fa;
+    border: 2px solid #ffffff;
+    pointer-events: auto; /* 圆点恢复鼠标感应 */
+    transform: translateY(-50%); /* 仅 Y 轴居中，杜绝 X 轴抖动 */
+    transition: all 0.2s ease;
+}
+
+.gemini-node:hover {
+    background: #0b57d0;
+    transform: translateY(-50%) scale(1.3);
+    z-index: 10;
+}
+
+/* 浮窗本体 */
+.gemini-tooltip {
+    position: absolute;
+    right: 24px; /* 距离圆点 12px 的空隙 */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 280px;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    border: 1px solid #dadce0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: auto;
+    transition: opacity 0.2s ease;
+}
+
+/* 核心黑科技：搭建一个横跨 24px 空隙的隐形桥梁，鼠标经过不掉落 */
+.gemini-tooltip::after {
+    content: '';
+    position: absolute;
+    /* 向右延伸 36px，完全跨越空隙并包裹住圆点本体 */
+    right: -36px; 
+    top: -20px; 
+    bottom: -20px; 
+    width: 36px;
+    background: transparent;
+}
+
+/* 确保时间轴容器能够触发 mouseenter/mouseleave 事件，同时不阻碍背景点击 */
+#gemini-timeline-container {
+    position: fixed;
+    right: 30px; 
+    top: 120px; 
+    bottom: 120px; 
+    width: 30px; /* 稍微给容器一点宽度 */
+    z-index: 9999; 
+    pointer-events: auto; /* 允许容器捕获鼠标进出事件 */
+}
+
+/* 释放背景点击穿透，保证只在需要的地方捕获鼠标 */
+#gemini-timeline-track {
+    pointer-events: none;
+}
+
+/* 完美的悬浮触发链路 */
+.gemini-node:hover .gemini-tooltip,
+.gemini-tooltip:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 浮窗内部排版 */
+.gemini-tooltip-header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid #f1f3f4; padding-bottom: 8px; margin-bottom: 8px;
+}
+.gemini-tooltip-time { font-size: 12px; font-weight: 600; color: #444746; }
+.gemini-tooltip-delete {
+    font-size: 12px; color: #5f6368; cursor: pointer; 
+    padding: 4px 8px; border-radius: 4px; transition: all 0.2s;
+}
+.gemini-tooltip-delete:hover { background: #fce8e6; color: #b3261e; }
+.gemini-tooltip-text {
+    font-size: 13px; color: #1f1f1f; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; 
 }
