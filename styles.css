@@ -1,0 +1,19 @@
+/* 针对我们刚才创建的按钮 ID 设置样式 */
+#gemini-parallel-btn {
+    position: absolute; /* 绝对定位，这样才能跟随鼠标位置 */
+    z-index: 999999; /* 层级设置得非常高，防止被 Gemini 原本的网页元素遮挡 */
+    padding: 8px 12px;
+    background-color: #1a73e8; /* 经典的 Google 蓝 */
+    color: white;
+    border: none;
+    border-radius: 6px; /* 圆角 */
+    font-size: 14px;
+    cursor: pointer; /* 鼠标放上去变成小手 */
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); /* 加一点阴影更有立体感 */
+    display: none; /* 默认状态是隐藏的 */
+}
+
+/* 鼠标悬停在按钮上的交互效果 */
+#gemini-parallel-btn:hover {
+    background-color: #1557b0; /* 颜色稍微加深 */
+}
