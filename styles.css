@@ -113,3 +113,119 @@ body {
     transition: width 0.3s ease;
     overflow-x: hidden;
 }
+/* ---- 【全新增】：平行窗口底部操作栏 ---- */
+#gemini-sidebar-actions {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 8px 16px;
+    border-radius: 24px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px); /* 苹果/谷歌风格的毛玻璃效果 */
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+/* 操作栏内的胶囊按钮基础样式 */
+.gemini-action-btn {
+    border: 1px solid #dadce0;
+    background: transparent;
+    border-radius: 18px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #444746;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.gemini-action-btn:hover { 
+    background: #f8f9fa; 
+    color: #1f1f1f;
+}
+
+/* “合并至主干” 的高亮样式 */
+.gemini-action-btn.primary {
+    background: #e8f0fe;
+    color: #0b57d0;
+    border: none;
+}
+
+.gemini-action-btn.primary:hover { 
+    background: #d3e3fd; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+/* ---- 【全新增】：二次确认弹窗样式 ---- */
+#gemini-confirm-dialog {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(5px);
+    z-index: 2000;
+    display: none; /* 默认隐藏 */
+    align-items: center;
+    justify-content: center;
+}
+
+.gemini-confirm-box {
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    width: 80%;
+    max-width: 320px;
+    text-align: center;
+    border: 1px solid #e0e0e0;
+}
+
+#gemini-confirm-title { 
+    font-size: 16px; 
+    font-weight: 600; 
+    margin-bottom: 8px; 
+    color: #202124; 
+}
+
+#gemini-confirm-desc { 
+    font-size: 13px; 
+    color: #5f6368; 
+    margin-bottom: 20px; 
+    line-height: 1.5; 
+}
+
+.gemini-confirm-btns { 
+    display: flex; 
+    gap: 12px; 
+    justify-content: center; 
+}
+
+.gemini-confirm-btn {
+    border: none; 
+    border-radius: 8px; 
+    padding: 8px 16px; 
+    cursor: pointer; 
+    font-size: 14px; 
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+#gemini-confirm-cancel { 
+    background: #f1f3f4; 
+    color: #3c4043; 
+}
+
+#gemini-confirm-cancel:hover { 
+    background: #e8eaed; 
+}
+
+#gemini-confirm-ok { 
+    color: white; 
+    /* 默认蓝色，将在 JS 中根据不同操作动态改变颜色 */
+    background: #1a73e8; 
+}
