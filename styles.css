@@ -567,3 +567,30 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
 /* 解除侧边栏的内容压迫 */
 #gemini-ghost-frame { padding-top: 0 !important; }
 #gemini-search-results-container { padding-top: 64px !important; }
+
+/* ========================================================================= */
+/* 搜索框交互升级：融入胶囊的隐形输入框                                          */
+/* ========================================================================= */
+
+.gemini-search-input {
+    border: none !important;
+    background: transparent !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #202124 !important;
+    outline: none !important;
+    width: 140px; /* 默认宽度 */
+    padding: 0 !important;
+    margin: 0 !important;
+    transition: width 0.3s ease !important;
+}
+
+.gemini-search-input::placeholder {
+    color: #9aa0a6 !important;
+    font-weight: 400 !important;
+}
+
+/* 当用户点击准备输入时，胶囊自动变宽一点点，提供更充裕的输入视野 */
+.gemini-search-input:focus {
+    width: 200px; 
+}

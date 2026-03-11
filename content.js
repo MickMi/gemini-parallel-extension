@@ -229,25 +229,49 @@ function openSidebar(textContext, mode) {
                 
                 <div id="gemini-sidebar-floating-title">
                     <span class="gemini-float-title-icon">🔍</span>
-                    <span class="gemini-float-title-text">搜索：${textContext}</span>
+                    <input type="text" id="gemini-search-input" class="gemini-search-input" value="${textContext}" placeholder="输入新词并回车...">
                     <span class="gemini-float-title-action" title="更多">⋮</span>
                 </div>
             </div>
             <div id="gemini-search-results-container">
-                <div class="gemini-loading-text">正在从 Google 获取结果... 🕵️‍♂️</div>
-            </div>
+                </div>
         `;
+        
         document.getElementById('gemini-close-sidebar').addEventListener('click', closeSidebar);
         
-        chrome.runtime.sendMessage({ action: "fetchGoogleSearch", query: textContext }, (response) => {
-            const container = document.getElementById('gemini-search-results-container');
-            if (!container) return; 
-            if (response && response.success) {
-                renderSearchResults(response.html, container);
-            } else {
-                container.innerHTML = `<div class="gemini-loading-text" style="color: #d93025;">获取搜索结果失败，请检查网络或刷新重试。</div>`;
+        const searchInput = document.getElementById('gemini-search-input');
+        const container = document.getElementById('gemini-search-results-container');
+
+        // 【全新抽离】：把请求和渲染逻辑包装成闭包，方便随时调用
+        const performSearch = (queryKeyword) => {
+            if (!queryKeyword.trim()) return; // 防误触空搜
+            container.innerHTML = `<div class="gemini-loading-text">正在从 Google 获取结果... 🕵️‍♂️</div>`;
+            
+            chrome.runtime.sendMessage({ action: "fetchGoogleSearch", query: queryKeyword }, (response) => {
+                const currentContainer = document.getElementById('gemini-search-results-container');
+                if (!currentContainer) return; 
+                if (response && response.success) {
+                    renderSearchResults(response.html, currentContainer);
+                } else {
+                    currentContainer.innerHTML = `<div class="gemini-loading-text" style="color: #d93025;">获取搜索结果失败，请检查网络或刷新重试。</div>`;
+                }
+            });
+        };
+
+        // 【绑定交互】：监听输入框的回车事件
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchInput.blur(); // 搜完自动失去焦点，收起虚拟键盘
+                performSearch(searchInput.value); // 拿最新的词去搜
             }
         });
+        
+        // 防止点击输入框时触发拖拽等意外事件
+        searchInput.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        // 首次呼出侧边栏时，自动执行一次初始词汇的搜索
+        performSearch(textContext);
     }
     initResizer(sidebar);
 
