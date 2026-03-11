@@ -1,20 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Gemini 平行对话",
+  "name": "Gemini Parallel & Search",
   "version": "1.0",
-  "description": "选中文本，开启平行的 Gemini 对话分支",
+  "description": "平行分支与时间轴导航插件",
   "permissions": [
-    "activeTab",
-    "scripting",
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "*://gemini.google.com/*"
+    "*://gemini.google.com/*",
+    "https://www.google.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
       {
-        "id": "remove-frame-options",
+        "id": "ruleset_1",
         "enabled": true,
         "path": "rules.json"
       }
@@ -22,9 +21,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://gemini.google.com/*"],
+      "matches": ["*://gemini.google.com/*"],
       "css": ["styles.css"],
       "js": ["content.js"]
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }

@@ -17,22 +17,84 @@ body.parallel-open [component="navbar"] {
 }
 
 /* ---- 悬浮按钮样式 ---- */
-#gemini-parallel-btn {
+/* ---- 修正：将悬浮按钮升级为双选胶囊菜单 ---- */
+#gemini-floating-menu {
     position: absolute;
     z-index: 999999;
-    padding: 8px 12px;
-    background-color: #1a73e8;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    cursor: pointer;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     display: none;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: 1px solid #dadce0;
+    overflow: hidden; /* 让内部按钮贴合圆角 */
+    /* 使用 flex 让两个按钮并排 */
+    flex-direction: row; 
 }
 
-#gemini-parallel-btn:hover {
-    background-color: #1557b0;
+.gemini-menu-btn {
+    border: none;
+    background: transparent;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #3c4043;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.gemini-menu-btn:hover { background: #f1f3f4; }
+.gemini-menu-btn:first-child { border-right: 1px solid #f1f3f4; }
+
+/* ---- 【全新增】：Google 搜索结果的侧边栏原生 UI ---- */
+#gemini-search-results-container {
+    padding: 20px;
+    overflow-y: auto;
+    flex-grow: 1;
+    background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.gemini-search-card {
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    border: 1px solid #e8eaed;
+    transition: box-shadow 0.2s;
+}
+
+.gemini-search-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.gemini-search-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: #1a0dab;
+    text-decoration: none;
+    margin-bottom: 6px;
+    display: block;
+    line-height: 1.4;
+}
+
+.gemini-search-title:hover { text-decoration: underline; }
+
+.gemini-search-url {
+    font-size: 12px; color: #202124; margin-bottom: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.gemini-search-snippet {
+    font-size: 13px; color: #4d5156; line-height: 1.5;
+}
+
+.gemini-loading-text {
+    text-align: center; color: #5f6368; font-size: 14px; margin-top: 40px;
 }
 
 /* ---- 侧边栏容器样式 ---- */

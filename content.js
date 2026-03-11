@@ -1,50 +1,65 @@
-let floatingBtn = null;
+// ==========================================
+// 全局变量区
+// ==========================================
+let floatingMenu = null;
 let currentSelectedText = ""; 
 let pendingConfirmAction = null; 
 let isHoveringTimeline = false;
 
+// ==========================================
+// 1. 划词双选菜单模块
+// ==========================================
 document.addEventListener('mouseup', (event) => {
-    if (event.target.closest('#gemini-parallel-btn') || event.target.closest('#gemini-parallel-sidebar')) return;
+    if (event.target.closest('#gemini-floating-menu') || event.target.closest('#gemini-parallel-sidebar')) return;
     const isInput = event.target.closest('rich-textarea') || event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable;
     const selectedText = window.getSelection().toString().trim();
     
     if (!isInput && selectedText.length > 2) {
         currentSelectedText = selectedText; 
-        showFloatingButton(event.pageX, event.pageY); 
+        showFloatingMenu(event.pageX, event.pageY); 
     } else {
-        hideFloatingButton();
+        hideFloatingMenu();
     }
 });
 
 document.addEventListener('mousedown', (event) => {
-    if (floatingBtn && !floatingBtn.contains(event.target)) {
-        hideFloatingButton();
+    if (floatingMenu && !floatingMenu.contains(event.target)) {
+        hideFloatingMenu();
     }
 });
 
-function showFloatingButton(x, y) {
-    if (!floatingBtn) {
-        floatingBtn = document.createElement('button');
-        floatingBtn.id = 'gemini-parallel-btn';
-        floatingBtn.textContent = '💡 平行对话';
-        document.body.appendChild(floatingBtn);
+function showFloatingMenu(x, y) {
+    if (!floatingMenu) {
+        floatingMenu = document.createElement('div');
+        floatingMenu.id = 'gemini-floating-menu';
+        floatingMenu.innerHTML = `
+            <button class="gemini-menu-btn" id="btn-mode-chat">💡 平行对话</button>
+            <button class="gemini-menu-btn" id="btn-mode-search">🔍 Google 搜索</button>
+        `;
+        document.body.appendChild(floatingMenu);
 
-        floatingBtn.addEventListener('click', () => {
-            openSidebar(currentSelectedText); 
-            hideFloatingButton();
+        // 绑定两个不同的核心入口
+        document.getElementById('btn-mode-chat').addEventListener('click', () => {
+            openSidebar(currentSelectedText, 'chat'); 
+            hideFloatingMenu();
+        });
+        document.getElementById('btn-mode-search').addEventListener('click', () => {
+            openSidebar(currentSelectedText, 'search'); 
+            hideFloatingMenu();
         });
     }
-    floatingBtn.style.left = `${x + 10}px`;
-    floatingBtn.style.top = `${y + 10}px`;
-    floatingBtn.style.display = 'block';
+    floatingMenu.style.left = `${x + 10}px`;
+    floatingMenu.style.top = `${y + 10}px`;
+    floatingMenu.style.display = 'flex';
 }
 
-function hideFloatingButton() {
-    if (floatingBtn) {
-        floatingBtn.style.display = 'none';
-    }
+function hideFloatingMenu() {
+    if (floatingMenu) floatingMenu.style.display = 'none';
 }
 
+// ==========================================
+// 2. 侧边栏与核心业务模块
+// ==========================================
 function getTargetUrl() {
     const path = window.location.pathname;
     const accountMatch = path.match(/^\/u\/\d+/);
@@ -80,85 +95,23 @@ function mergeToMain() {
             mainEditorDiv.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
         }
         closeSidebar();
-    } catch (e) {
-        alert("跨域限制或页面结构变化，提取失败，请手动复制。");
-    }
+    } catch (e) { alert("提取失败，请手动复制。"); }
 }
 
-/* ========================================================================= */
-/* 【核心重构】：全局二次确认弹窗系统                                          */
-/* ========================================================================= */
-
-function initGlobalDialog() {
-    // 确保全局只有一个弹窗实例
-    if (document.getElementById('gemini-confirm-dialog')) return;
-    
-    const dialog = document.createElement('div');
-    dialog.id = 'gemini-confirm-dialog';
-    dialog.innerHTML = `
-        <div class="gemini-confirm-box">
-            <div id="gemini-confirm-title">确认</div>
-            <div id="gemini-confirm-desc">描述</div>
-            <div class="gemini-confirm-btns">
-                <button id="gemini-confirm-cancel" class="gemini-confirm-btn">取消</button>
-                <button id="gemini-confirm-ok" class="gemini-confirm-btn">确认</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(dialog);
-
-    document.getElementById('gemini-confirm-cancel').addEventListener('click', () => {
-        document.getElementById('gemini-confirm-dialog').style.display = 'none';
-        pendingConfirmAction = null;
-    });
-    
-    document.getElementById('gemini-confirm-ok').addEventListener('click', () => {
-        document.getElementById('gemini-confirm-dialog').style.display = 'none';
-        if (pendingConfirmAction) { 
-            pendingConfirmAction(); 
-            pendingConfirmAction = null; 
-        }
-    });
-}
-
-function showConfirmDialog(actionType, customAction = null) {
-    initGlobalDialog(); // 唤起前确保弹窗已经被注入到页面中
-    const dialog = document.getElementById('gemini-confirm-dialog');
-    const title = document.getElementById('gemini-confirm-title');
-    const desc = document.getElementById('gemini-confirm-desc');
-    const okBtn = document.getElementById('gemini-confirm-ok');
-
-    if (actionType === 'forget') {
-        title.textContent = '🗑️ 确认遗忘分支？';
-        desc.textContent = '当前分支对话将被永久清空。这不会对您的主干对话产生任何影响，相当于无事发生。';
-        okBtn.style.backgroundColor = '#d93025'; 
-        okBtn.textContent = '确认遗忘';
-        pendingConfirmAction = () => { closeSidebar(); };
-    } else if (actionType === 'merge') {
-        title.textContent = '✨ 确认合并至主干？';
-        desc.textContent = '我们将自动提取本分支中 AI 的最后一次回答，并作为上下文填入主页面的输入框中。';
-        okBtn.style.backgroundColor = '#1a73e8'; 
-        okBtn.textContent = '确认合并';
-        pendingConfirmAction = () => { mergeToMain(); };
-    } else if (actionType === 'delete_node') {
-        // 【全新增】：时间轴节点的视觉删除确认
-        title.textContent = '🗑️ 确认隐藏此对话？';
-        desc.textContent = '此操作将在当前页面视觉上隐藏该轮问答。刷新网页后记录将从云端恢复。';
-        okBtn.style.backgroundColor = '#d93025'; 
-        okBtn.textContent = '确认隐藏';
-        pendingConfirmAction = customAction; // 执行时间轴传过来的删除闭包
-    }
-    dialog.style.display = 'flex'; 
-}
-
-function openSidebar(textContext) {
+function openSidebar(textContext, mode) {
     let sidebar = document.getElementById('gemini-parallel-sidebar');
-    document.documentElement.style.setProperty('--parallel-sidebar-width', '400px');
+    document.documentElement.style.setProperty('--parallel-sidebar-width', '450px'); 
     
     if (!sidebar) {
         sidebar = document.createElement('div');
         sidebar.id = 'gemini-parallel-sidebar';
-        // 从 sidebar 的 HTML 中彻底剥离了 confirm-dialog
+        document.body.appendChild(sidebar);
+    }
+
+    // 【防串台核心】：每次打开前，无情清空侧边栏里的所有旧代码
+    sidebar.innerHTML = '';
+
+    if (mode === 'chat') {
         sidebar.innerHTML = `
             <div id="gemini-sidebar-resizer"></div>
             <div id="gemini-sidebar-header">
@@ -170,23 +123,43 @@ function openSidebar(textContext) {
                 <button id="gemini-btn-merge" class="gemini-action-btn primary">✨ 合并至主干</button>
             </div>
         `;
-        document.body.appendChild(sidebar);
-
         document.getElementById('gemini-close-sidebar').addEventListener('click', closeSidebar);
         document.getElementById('gemini-btn-forget').addEventListener('click', () => showConfirmDialog('forget'));
         document.getElementById('gemini-btn-merge').addEventListener('click', () => showConfirmDialog('merge'));
         
-        initResizer(sidebar);
+        const iframe = document.getElementById('gemini-ghost-frame');
+        iframe.onload = () => {
+            if (iframe.src === 'about:blank') return;
+            injectCSSIntoIframe(iframe.contentDocument || iframe.contentWindow.document);
+            injectTextAndSend(iframe, textContext);
+        };
+    } else if (mode === 'search') {
+        sidebar.innerHTML = `
+            <div id="gemini-sidebar-resizer"></div>
+            <div id="gemini-sidebar-header" style="justify-content: space-between; padding-left: 48px; border-bottom: 1px solid #e0e0e0; background: #f8f9fa;">
+                <span id="gemini-close-sidebar" title="关闭搜索">✖</span>
+                <span style="font-size: 14px; font-weight: 500; color: #202124;">🔍 搜索：${textContext.substring(0, 15)}${textContext.length > 15 ? '...' : ''}</span>
+                <span style="width: 20px;"></span> 
+            </div>
+            <div id="gemini-search-results-container">
+                <div class="gemini-loading-text">正在从 Google 获取结果... 🕵️‍♂️</div>
+            </div>
+        `;
+        document.getElementById('gemini-close-sidebar').addEventListener('click', closeSidebar);
+        
+        chrome.runtime.sendMessage({ action: "fetchGoogleSearch", query: textContext }, (response) => {
+            const container = document.getElementById('gemini-search-results-container');
+            if (!container) return; 
+            if (response && response.success) {
+                renderSearchResults(response.html, container);
+            } else {
+                container.innerHTML = `<div class="gemini-loading-text" style="color: #d93025;">获取搜索结果失败，请检查网络或刷新重试。</div>`;
+            }
+        });
     }
-    
-    const iframe = document.getElementById('gemini-ghost-frame');
-    iframe.src = getTargetUrl();
-    iframe.onload = () => {
-        if (iframe.src === 'about:blank') return;
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        injectCSSIntoIframe(iframeDoc);
-        injectTextAndSend(iframe, textContext);
-    };
+
+    // 重新绑定拖拽，修复搜索模式下无 iframe 导致的报错
+    initResizer(sidebar);
 
     setTimeout(() => {
         sidebar.classList.add('open');
@@ -194,6 +167,68 @@ function openSidebar(textContext) {
     }, 50);
 }
 
+// Google 搜索 DOM 清洗模块
+function renderSearchResults(htmlString, container) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const titleHeaders = doc.querySelectorAll('a h3');
+    let resultsHtml = '';
+    let count = 0;
+
+    titleHeaders.forEach(h3 => {
+        if (count >= 10) return; 
+        const linkElement = h3.closest('a');
+        if (!linkElement) return;
+
+        let url = linkElement.getAttribute('href');
+        if (!url || url.startsWith('/search?') || url.startsWith('javascript:')) return;
+
+        if (url.startsWith('/url?q=')) {
+            url = decodeURIComponent(url.split('/url?q=')[1].split('&')[0]);
+        } else if (url.startsWith('/url?url=')) {
+            url = decodeURIComponent(url.split('/url?url=')[1].split('&')[0]);
+        }
+
+        const title = h3.innerText.trim();
+        if (!title) return;
+
+        let snippet = "";
+        const resultBlock = linkElement.closest('div') || linkElement.parentElement.parentElement;
+        if (resultBlock) {
+            const snippetDivs = resultBlock.querySelectorAll('div[style*="-webkit-line-clamp"], .VwiC3b, .aCOpRe');
+            if (snippetDivs.length > 0) {
+                snippet = snippetDivs[0].innerText.trim();
+            } else {
+                let rawText = resultBlock.innerText.replace(title, '');
+                snippet = rawText.substring(0, 150).trim() + (rawText.length > 150 ? '...' : '');
+            }
+        }
+
+        if (url.startsWith('http')) {
+            try {
+                const hostname = new URL(url).hostname;
+                resultsHtml += `
+                    <div class="gemini-search-card">
+                        <a href="${url}" target="_blank" class="gemini-search-title">${title}</a>
+                        <div class="gemini-search-url">${hostname}</div>
+                        <div class="gemini-search-snippet">${snippet}</div>
+                    </div>
+                `;
+                count++;
+            } catch (e) {}
+        }
+    });
+
+    if (resultsHtml === '') {
+        container.innerHTML = `<div class="gemini-loading-text" style="color: #d93025; line-height: 1.6;">
+            <p>未能解析到结果 😕</p><p style="font-size: 12px;">这可能是因为被 Google 安全机制拦截，或页面结构发生了巨大变化。</p>
+        </div>`;
+    } else {
+        container.innerHTML = resultsHtml;
+    }
+}
+
+// iframe 与拖拽辅助模块
 function injectCSSIntoIframe(iframeDoc) {
     try {
         const style = iframeDoc.createElement('style');
@@ -230,12 +265,14 @@ function injectTextAndSend(iframe, textContext) {
 
 function initResizer(sidebar) {
     const resizer = document.getElementById('gemini-sidebar-resizer');
-    const iframe = document.getElementById('gemini-ghost-frame');
+    const iframe = document.getElementById('gemini-ghost-frame'); // 搜索模式下为 null，不再报错
     let isResizing = false;
+    
+    if (!resizer) return;
 
     resizer.addEventListener('mousedown', (e) => {
         isResizing = true;
-        iframe.classList.add('iframe-dragging');
+        if (iframe) iframe.classList.add('iframe-dragging');
         document.body.style.transition = 'none';
         e.preventDefault(); 
     });
@@ -249,12 +286,74 @@ function initResizer(sidebar) {
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
-            iframe.classList.remove('iframe-dragging');
+            if (iframe) iframe.classList.remove('iframe-dragging');
             document.body.style.transition = 'width 0.3s ease';
         }
     });
 }
 
+// ==========================================
+// 3. 全局确认弹窗系统
+// ==========================================
+function initGlobalDialog() {
+    if (document.getElementById('gemini-confirm-dialog')) return;
+    const dialog = document.createElement('div');
+    dialog.id = 'gemini-confirm-dialog';
+    dialog.innerHTML = `
+        <div class="gemini-confirm-box">
+            <div id="gemini-confirm-title">确认</div>
+            <div id="gemini-confirm-desc">描述</div>
+            <div class="gemini-confirm-btns">
+                <button id="gemini-confirm-cancel" class="gemini-confirm-btn">取消</button>
+                <button id="gemini-confirm-ok" class="gemini-confirm-btn">确认</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+
+    document.getElementById('gemini-confirm-cancel').addEventListener('click', () => {
+        document.getElementById('gemini-confirm-dialog').style.display = 'none';
+        pendingConfirmAction = null;
+    });
+    
+    document.getElementById('gemini-confirm-ok').addEventListener('click', () => {
+        document.getElementById('gemini-confirm-dialog').style.display = 'none';
+        if (pendingConfirmAction) { pendingConfirmAction(); pendingConfirmAction = null; }
+    });
+}
+
+function showConfirmDialog(actionType, customAction = null) {
+    initGlobalDialog(); 
+    const dialog = document.getElementById('gemini-confirm-dialog');
+    const title = document.getElementById('gemini-confirm-title');
+    const desc = document.getElementById('gemini-confirm-desc');
+    const okBtn = document.getElementById('gemini-confirm-ok');
+
+    if (actionType === 'forget') {
+        title.textContent = '🗑️ 确认遗忘分支？';
+        desc.textContent = '当前分支对话将被永久清空。这不会对您的主干对话产生任何影响，相当于无事发生。';
+        okBtn.style.backgroundColor = '#d93025'; 
+        okBtn.textContent = '确认遗忘';
+        pendingConfirmAction = () => { closeSidebar(); };
+    } else if (actionType === 'merge') {
+        title.textContent = '✨ 确认合并至主干？';
+        desc.textContent = '我们将自动提取本分支中 AI 的最后一次回答，并作为上下文填入主页面的输入框中。';
+        okBtn.style.backgroundColor = '#1a73e8'; 
+        okBtn.textContent = '确认合并';
+        pendingConfirmAction = () => { mergeToMain(); };
+    } else if (actionType === 'delete_node') {
+        title.textContent = '🗑️ 确认隐藏此对话？';
+        desc.textContent = '此操作将在当前页面视觉上隐藏该轮问答。刷新网页后记录将从云端恢复。';
+        okBtn.style.backgroundColor = '#d93025'; 
+        okBtn.textContent = '确认隐藏';
+        pendingConfirmAction = customAction; 
+    }
+    dialog.style.display = 'flex'; 
+}
+
+// ==========================================
+// 4. 时间轴心跳引擎 v2.1
+// ==========================================
 let timelineContainer = null;
 
 function renderTimeline() {
@@ -265,7 +364,6 @@ function renderTimeline() {
         
         timelineContainer.addEventListener('mouseenter', () => { isHoveringTimeline = true; });
         timelineContainer.addEventListener('mouseleave', () => { isHoveringTimeline = false; });
-
         document.body.appendChild(timelineContainer);
     } else {
         timelineContainer = document.getElementById('gemini-timeline-container');
@@ -294,11 +392,7 @@ function renderTimeline() {
         const rHeight = r ? r.offsetHeight : 50;
         const blockHeight = qHeight + rHeight + 60; 
         
-        chatData.push({
-            queryElement: q,
-            responseElement: r,
-            topOffset: cumulativeHeight
-        });
+        chatData.push({ queryElement: q, responseElement: r, topOffset: cumulativeHeight });
         cumulativeHeight += blockHeight;
     });
 
@@ -343,7 +437,6 @@ function renderTimeline() {
             if (delBtn) {
                 delBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    // 【核心修改】：呼出全局确认弹窗，并将原本的删除逻辑作为回调函数传入
                     showConfirmDialog('delete_node', () => {
                         let qContainer = data.queryElement.closest('.user-message-container') || data.queryElement.parentElement.parentElement;
                         if (qContainer) qContainer.style.display = 'none';
@@ -352,8 +445,6 @@ function renderTimeline() {
                             let rContainer = data.responseElement.closest('.model-message-container') || data.responseElement.parentElement.parentElement;
                             if (rContainer) rContainer.style.display = 'none';
                         }
-                        
-                        // 确认删除后，解除交互锁并立即重绘
                         isHoveringTimeline = false; 
                         renderTimeline(); 
                     });
