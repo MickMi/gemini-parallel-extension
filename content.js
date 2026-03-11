@@ -356,27 +356,62 @@ function injectCSSIntoIframe(iframeDoc) {
     } catch (e) {}
 }
 
-function injectTextAndSend(iframe, textContext) {
-    let attempts = 0;
-    const checkInterval = setInterval(() => {
-        attempts++;
-        if (attempts > 20) { clearInterval(checkInterval); return; }
-        try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            const editorDiv = iframeDoc.querySelector('rich-textarea .ql-editor[contenteditable="true"]');
-            if (editorDiv) {
-                clearInterval(checkInterval);
-                editorDiv.innerHTML = ''; 
-                const paragraph = iframeDoc.createElement('p');
-                paragraph.textContent = `基于以下上下文：\n${textContext}\n\n`;
-                editorDiv.appendChild(paragraph);
-                editorDiv.focus();
-                editorDiv.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            }
-        } catch (error) {}
-    }, 500);
-}
+/**
+ * 核心：向 iframe 注入文字、换行并自动将光标定位至末尾
+ */
+function injectTextAndSend(iframe, text) {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    
+    // 寻找 Gemini 的富文本输入区
+    const promptArea = iframeDoc.querySelector('.ql-editor') || 
+                       iframeDoc.querySelector('[contenteditable="true"]');
 
+    if (promptArea) {
+        // 1. 清空当前内容
+        promptArea.focus();
+        promptArea.innerHTML = '';
+
+        // 2. 创建第一行：引导语 + 引用文本
+        const firstLine = iframeDoc.createElement('p');
+        
+        const boldGuide = iframeDoc.createElement('strong');
+        boldGuide.textContent = "请基于当前上下文：";
+        
+        const quoteText = iframeDoc.createTextNode(`“${text}”`);
+        
+        firstLine.appendChild(boldGuide);
+        firstLine.appendChild(quoteText);
+
+        // 3. 创建第二行：空行（供用户直接输入）
+        const secondLine = iframeDoc.createElement('p');
+        const br = iframeDoc.createElement('br');
+        secondLine.appendChild(br);
+
+        // 4. 将两行插入容器
+        promptArea.appendChild(firstLine);
+        promptArea.appendChild(secondLine);
+
+        // 5. 【核心重写】：精准光标定位逻辑
+        const selection = iframe.contentWindow.getSelection();
+        const range = iframeDoc.createRange();
+
+        // 强制定位到第二行（secondLine）的开头，即 br 之前
+        range.setStart(secondLine, 0);
+        range.collapse(true);
+
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // 6. 派发事件，激活发送按钮
+        promptArea.dispatchEvent(new Event('input', { bubbles: true }));
+        promptArea.dispatchEvent(new Event('compositionend', { bubbles: true }));
+
+        console.log("已通过节点注入实现换行与末尾对焦");
+    } else {
+        // 初始加载可能较慢，轮询检查
+        setTimeout(() => injectTextAndSend(iframe, text), 500);
+    }
+}
 // 优化版：iframe 与拖拽辅助模块
 function initResizer(sidebar) {
     const resizer = document.getElementById('gemini-sidebar-resizer');
