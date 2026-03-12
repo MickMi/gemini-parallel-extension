@@ -44,3 +44,8 @@
 ### 1. 对话分组
 ### 2. 对话导出
 ### 3. 自动化总结
+
+---
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
