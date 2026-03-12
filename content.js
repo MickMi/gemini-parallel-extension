@@ -102,18 +102,28 @@ function getTargetUrl() {
     return window.location.origin + accountPrefix + '/app' + window.location.search;
 }
 
-function closeSidebar() {
+const closeSidebar = () => {
     const sidebar = document.getElementById('gemini-parallel-sidebar');
+    
     if (sidebar) {
+        // 1. 移除样式类
         sidebar.classList.remove('open');
         document.body.classList.remove('parallel-open');
         document.documentElement.style.setProperty('--parallel-sidebar-width', '0px');
-        const iframe = document.getElementById('gemini-ghost-frame');
-        if (iframe) iframe.src = 'about:blank';
+
+        // 2. 彻底移除 DOM 节点 (这是关键一步)
+        // 延迟移除可以配合 CSS 过渡动画，让关闭动作更平滑
+        setTimeout(() => {
+            sidebar.remove(); 
+        }, 300); // 这里的 300ms 应与你 CSS 中的 transition 时间一致
     }
-    // 【新增】：关闭侧边栏时，停止标题捕获，节省性能
-    if (titlePollInterval) clearInterval(titlePollInterval);
-}
+
+    // 3. 停止标题捕获与清理
+    if (titlePollInterval) {
+        clearInterval(titlePollInterval);
+        titlePollInterval = null; // 显式置空，防止逻辑误判
+    }
+};
 
 // 【全新增】：渲染主窗口的悬浮标题
 function renderMainFloatingTitle() {
@@ -623,24 +633,31 @@ setInterval(renderTimeline, 2000);
 // 【V3 终极版】：注入式静默删除引擎
 async function executeForgetBranch() {
     const iframe = document.getElementById('gemini-ghost-frame');
-    if (!iframe) { closeSidebar(); return; }
+    if (!iframe) { 
+        // 兜底：如果窗都没了，确保清理所有胶囊 UI
+        closeSidebar(); 
+        return; 
+    }
 
     const forgetBtn = document.getElementById('gemini-btn-forget');
-    if (forgetBtn) forgetBtn.innerHTML = '⏳ 正在物理抹除...';
-
+    
     try {
         const doc = iframe.contentDocument || iframe.contentWindow.document;
 
-        // 1. 强制 UI 环境渲染
+        // 1. 空分支直接闪电关闭
+        const hasMessages = doc.querySelector('user-query, .query-content, [data-test-id="user-query"]');
+        if (!hasMessages) {
+            console.log("Empty branch, fast exit.");
+            closeSidebar();
+            return; 
+        }
+
+        // 2. 状态反馈：立即改变 UI
+        if (forgetBtn) forgetBtn.innerHTML = '⏳ 正在彻底销毁...';
+
+        // 3. 物理删除流
         const style = doc.createElement('style');
-        style.textContent = `
-            navigation-drawer, .v-st-container, header, nav { 
-                display: block !important; 
-                visibility: visible !important; 
-                opacity: 1 !important; 
-                pointer-events: auto !important;
-            }
-        `;
+        style.textContent = `navigation-drawer, .v-st-container, header, nav { display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }`;
         doc.head.appendChild(style);
 
         const humanClick = (el) => {
@@ -651,69 +668,80 @@ async function executeForgetBranch() {
             el.dispatchEvent(new MouseEvent('click', opts));
         };
 
-        // --- 执行流 ---
-
-        // A. 唤起侧边栏
+        // 唤起并操作
         const menuBtn = doc.querySelector('button[aria-label*="Menu" i], button[aria-label*="菜单" i]');
         if (menuBtn) humanClick(menuBtn);
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
 
-        // B. 【核心逻辑更新】：精准锁定 Selected 对话项的兄弟操作按钮
-        const findTargetMenuBtn = () => {
-            // 首先找到被选中的那个对话链接 (class 中包含 selected)
-            const selectedConversation = doc.querySelector('a[data-test-id="conversation"].selected');
+        const selectedConversation = doc.querySelector('a[data-test-id="conversation"].selected');
+        let targetBtn = (selectedConversation && selectedConversation.nextElementSibling) 
+            ? selectedConversation.nextElementSibling.querySelector('[data-test-id="actions-menu-button"]') 
+            : null;
+
+        if (targetBtn) {
+            humanClick(targetBtn);
+            await new Promise(r => setTimeout(r, 400));
+
+            const deleteBtn = doc.querySelector('[data-test-id="delete-button"]') || 
+                              Array.from(doc.querySelectorAll('[role="menuitem"]')).find(el => el.innerText.includes('Delete') || el.innerText.includes('删除'));
             
-            if (selectedConversation) {
-                // 根据你提供的 HTML，按钮容器是 <a> 的下一个兄弟节点
-                const actionsContainer = selectedConversation.nextElementSibling;
-                if (actionsContainer && actionsContainer.classList.contains('conversation-actions-container')) {
-                    return actionsContainer.querySelector('[data-test-id="actions-menu-button"]');
+            if (deleteBtn) {
+                humanClick(deleteBtn);
+                await new Promise(r => setTimeout(r, 400));
+                
+                const confirmBtn = Array.from(doc.querySelectorAll('button')).find(b => 
+                    (b.innerText.includes('Delete') || b.innerText.includes('删除')) && b.offsetWidth > 0
+                );
+                
+                if (confirmBtn) {
+                    humanClick(confirmBtn);
+                    // 重要：这里不等待无限长时间，触发即认为“成功捕获”
+                    await new Promise(r => setTimeout(r, 500)); 
                 }
             }
-            
-            // 兜底方案：直接抓列表里第一个出现的按钮
-            return doc.querySelector('navigation-drawer [data-test-id="actions-menu-button"]');
-        };
-
-        const targetBtn = findTargetMenuBtn();
-        
-        if (!targetBtn) {
-            throw new Error("未能定位到操作菜单按钮");
-        }
-
-        // 给选中的按钮一个视觉反馈
-        targetBtn.style.outline = '3px solid #1a73e8';
-        humanClick(targetBtn);
-        
-        // C. 点击删除按钮 ( data-test-id="delete-button" )
-        // 菜单弹出通常需要一点时间加载到 Body 根部
-        let deleteBtn = null;
-        for(let i=0; i<10; i++) { // 循环嗅探 1 秒
-            deleteBtn = doc.querySelector('[data-test-id="delete-button"]');
-            if (deleteBtn) break;
-            await new Promise(r => setTimeout(r, 100));
-        }
-        
-        if (!deleteBtn) throw new Error("未弹出删除选项");
-        humanClick(deleteBtn);
-
-        // D. 最终确认弹窗
-        await new Promise(r => setTimeout(r, 600));
-        const confirmBtn = Array.from(doc.querySelectorAll('button')).find(b => 
-            (b.innerText.includes('Delete') || b.innerText.includes('删除')) && 
-            (b.offsetWidth > 0 || b.classList.contains('filled-button'))
-        );
-
-        if (confirmBtn) {
-            humanClick(confirmBtn);
-            await new Promise(r => setTimeout(r, 1500)); // 等待云端同步
-            if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘分支';
-            closeSidebar();
         }
 
     } catch (error) {
-        console.warn("自动化销毁失败:", error.message);
-        if (forgetBtn) forgetBtn.innerHTML = '⚠️ 自动失败，请补刀';
-        iframe.style.opacity = '1';
+        console.warn("Delete flow interrupted:", error);
+    } finally {
+        // --- 终极修复：强制重置按钮状态并销毁 UI ---
+        if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘分支'; 
+        
+        // 确保 closeSidebar 内部能够处理“销毁中”的所有 DOM 节点
+        console.log("Triggering final UI cleanup...");
+        closeSidebar(); 
     }
+}
+
+/**
+ * 自动化深色模式适配引擎
+ */
+function initDarkModeObserver() {
+  const targetNode = document.body;
+  
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.attributeName === 'class' || mutation.attributeName === 'style') {
+        const isDark = document.body.classList.contains('dark-theme') || 
+                       getComputedStyle(document.body).backgroundColor === 'rgb(19, 19, 20)'; // Gemini 暗色背景值
+        
+        applyThemeToSidebar(isDark);
+      }
+    });
+  });
+
+  observer.observe(targetNode, { attributes: true });
+}
+
+function applyThemeToSidebar(isDark) {
+  const iframe = document.getElementById('gemini-ghost-frame');
+  if (!iframe) return;
+
+  // 向 iframe 注入主题指令，确保搜索结果也变色
+  if (isDark) {
+    iframe.style.filter = 'invert(0.9) hue-rotate(180deg)'; // 暴力适配搜索页面的简单方案
+    // 或者更优雅地给 iframe 内部发送消息，让它应用自己的暗色 CSS
+  } else {
+    iframe.style.filter = 'none';
+  }
 }

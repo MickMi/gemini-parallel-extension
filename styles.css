@@ -1,6 +1,36 @@
 /* ---- 【全新增】：定义全局 CSS 变量，用于统一控制分屏宽度 ---- */
 :root {
-    --parallel-sidebar-width: 0px;
+  /* 浅色模式变量 */
+  --gemini-island-bg: rgba(255, 255, 255, 0.7);
+  --gemini-text-main: #1f1f1f;
+  --gemini-text-sub: #444746;
+  --gemini-border: rgba(0, 0, 0, 0.1);
+  --gemini-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* 自动化触发：当系统开启深色模式，或 Gemini 官方切换到暗色 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gemini-island-bg: rgba(28, 28, 28, 0.8);
+    --gemini-text-main: #e3e3e3;
+    --gemini-text-sub: #c4c7c5;
+    --gemini-border: rgba(255, 255, 255, 0.1);
+    --gemini-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* 核心胶囊 UI 应用变量 */
+.gemini-island-capsule {
+  background: var(--gemini-island-bg) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid var(--gemini-border) !important;
+  box-shadow: var(--gemini-shadow) !important;
+  color: var(--gemini-text-main) !important;
+}
+
+.gemini-float-input {
+  background: transparent !important;
+  color: var(--gemini-text-main) !important;
 }
 
 /* 主页面分屏时的状态 */
