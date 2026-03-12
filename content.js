@@ -5,7 +5,7 @@ let floatingMenu = null;
 let currentSelectedText = ""; 
 let pendingConfirmAction = null; 
 let isHoveringTimeline = false;
-let titlePollInterval = null; // 【新增】：用于实时捕获标题的计时器
+let titlePollInterval = null; 
 
 // ==========================================
 // 1. 划词双选菜单模块
@@ -29,7 +29,6 @@ document.addEventListener('mousedown', (event) => {
     }
 });
 
-// 【核心修复】：升级带有“边缘碰撞检测”的菜单呼出逻辑
 function showFloatingMenu(x, y) {
     if (!floatingMenu) {
         floatingMenu = document.createElement('div');
@@ -50,38 +49,25 @@ function showFloatingMenu(x, y) {
         });
     }
     
-    // 先设为透明并显示，以获取真实的物理尺寸
     floatingMenu.style.visibility = 'hidden';
     floatingMenu.style.display = 'flex';
     
-    // 如果获取不到，给个默认安全宽度 240px
     const menuWidth = floatingMenu.offsetWidth || 240; 
     const menuHeight = floatingMenu.offsetHeight || 42;
     
-    // 【核心修复 1】：探查侧边栏是否开启，并获取其当前真实宽度
     const isSidebarOpen = document.body.classList.contains('parallel-open');
     let sidebarWidth = 0;
     if (isSidebarOpen) {
         const rootStyle = getComputedStyle(document.documentElement);
-        // 读取 CSS 变量并转为数字，如果没有则默认 450
         sidebarWidth = parseInt(rootStyle.getPropertyValue('--parallel-sidebar-width')) || 450;
     }
     
-    // 【核心修复 2】：计算真正的“右侧叹息之墙”（屏幕总宽 - 侧边栏宽度 - 20px安全边距）
     const safeRightEdge = window.innerWidth - sidebarWidth - 20;
-    
     let finalX = x + 10;
     let finalY = y + 10;
     
-    // 碰撞检测：如果向右弹出会撞到侧边栏或屏幕边缘，强行翻转到鼠标左侧！
-    if (finalX + menuWidth > safeRightEdge) {
-        finalX = x - menuWidth - 10;
-    }
-    
-    // 碰撞检测：底部检测保持不变
-    if (finalY + menuHeight > window.innerHeight - 20) {
-        finalY = y - menuHeight - 10;
-    }
+    if (finalX + menuWidth > safeRightEdge) finalX = x - menuWidth - 10;
+    if (finalY + menuHeight > window.innerHeight - 20) finalY = y - menuHeight - 10;
     
     floatingMenu.style.left = `${finalX}px`;
     floatingMenu.style.top = `${finalY}px`;
@@ -103,29 +89,22 @@ function getTargetUrl() {
 }
 
 const closeSidebar = () => {
+    console.log("执行彻底清理...");
     const sidebar = document.getElementById('gemini-parallel-sidebar');
     
     if (sidebar) {
-        // 1. 移除样式类
         sidebar.classList.remove('open');
         document.body.classList.remove('parallel-open');
         document.documentElement.style.setProperty('--parallel-sidebar-width', '0px');
-
-        // 2. 彻底移除 DOM 节点 (这是关键一步)
-        // 延迟移除可以配合 CSS 过渡动画，让关闭动作更平滑
-        setTimeout(() => {
-            sidebar.remove(); 
-        }, 300); // 这里的 300ms 应与你 CSS 中的 transition 时间一致
+        setTimeout(() => { if (sidebar.parentNode) sidebar.remove(); }, 300);
     }
 
-    // 3. 停止标题捕获与清理
     if (titlePollInterval) {
         clearInterval(titlePollInterval);
-        titlePollInterval = null; // 显式置空，防止逻辑误判
+        titlePollInterval = null; 
     }
 };
 
-// 【全新增】：渲染主窗口的悬浮标题
 function renderMainFloatingTitle() {
     let floatingTitle = document.getElementById('gemini-main-floating-title');
     if (!floatingTitle) {
@@ -134,11 +113,9 @@ function renderMainFloatingTitle() {
         document.body.appendChild(floatingTitle);
     }
     
-    // 去原生界面里“偷”当前对话的标题
     const titleNode = document.querySelector('[data-test-id="conversation-title"]');
     const actualTitle = titleNode ? titleNode.innerText.trim() : '主干对话';
 
-    // 注入 UI，包含预留的拓展菜单 (⋮)
     floatingTitle.innerHTML = `
         <span class="gemini-float-title-icon">💬</span>
         <span class="gemini-float-title-text" title="${actualTitle}">${actualTitle}</span>
@@ -177,28 +154,30 @@ function openSidebar(textContext, mode) {
     }
 
     sidebar.innerHTML = '';
-
-    // 【核心联动】：呼出侧边栏的同时，生成主窗口的悬浮胶囊
     renderMainFloatingTitle();
 
     if (mode === 'chat') {
+        // 【核心修复】：防止模板变量被破坏，使用绝对安全的字符串拼接
+        // 【全新功能】：按钮合并入标题区域，带有抗挤压保护
         sidebar.innerHTML = `
             <div id="gemini-sidebar-resizer"></div>
             <div id="gemini-sidebar-header">
                 <div id="gemini-close-sidebar" class="gemini-action-glass-btn" title="关闭分支">✖</div>
                 
-                <div id="gemini-sidebar-floating-title">
-                    <span class="gemini-float-title-icon">💡</span>
-                    <span class="gemini-float-title-text">平行推演分支</span>
-                    <span class="gemini-float-title-action" title="更多">⋮</span>
+                <div id="gemini-sidebar-floating-title" style="max-width: 90% !important;">
+                    <span class="gemini-float-title-icon" style="flex-shrink: 0;">💡</span>
+                    <span class="gemini-float-title-text" style="flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">平行推演分支</span>
+                    
+                    <div style="display: flex; align-items: center; gap: 4px; margin-left: auto; padding-left: 10px; border-left: 1px solid var(--gemini-border, rgba(0,0,0,0.1)); flex-shrink: 0;">
+                        <button id="gemini-btn-forget" class="gemini-action-btn" style="white-space: nowrap; flex-shrink: 0; border: none; background: transparent; padding: 4px 8px; font-size: 12px; cursor: pointer; color: inherit;">🗑️ 遗忘</button>
+                        <button id="gemini-btn-merge" class="gemini-action-btn primary" style="white-space: nowrap; flex-shrink: 0; border: none; background: transparent; padding: 4px 8px; font-size: 12px; cursor: pointer; color: #0b57d0; font-weight: 600;">✨ 合并</button>
+                    </div>
+                    <span class="gemini-float-title-action" title="更多" style="flex-shrink: 0; margin-left: 4px;">⋮</span>
                 </div>
             </div>
-            <iframe id="gemini-ghost-frame" src="${getTargetUrl()}"></iframe>
-            <div id="gemini-sidebar-actions">
-                <button id="gemini-btn-forget" class="gemini-action-btn">🗑️ 遗忘分支</button>
-                <button id="gemini-btn-merge" class="gemini-action-btn primary">✨ 合并至主干</button>
-            </div>
+            <iframe id="gemini-ghost-frame" src="` + getTargetUrl() + `"></iframe>
         `;
+        
         document.getElementById('gemini-close-sidebar').addEventListener('click', closeSidebar);
         document.getElementById('gemini-btn-forget').addEventListener('click', () => showConfirmDialog('forget'));
         document.getElementById('gemini-btn-merge').addEventListener('click', () => showConfirmDialog('merge'));
@@ -209,42 +188,34 @@ function openSidebar(textContext, mode) {
             injectCSSIntoIframe(iframe.contentDocument || iframe.contentWindow.document);
             injectTextAndSend(iframe, textContext);
             
-            // 【全新增】：启动标题实时同步引擎
             if (titlePollInterval) clearInterval(titlePollInterval);
             titlePollInterval = setInterval(() => {
                 try {
                     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                    // 偷偷去 iframe 里寻找原生的标题元素
                     const titleNode = iframeDoc.querySelector('[data-test-id="conversation-title"]');
                     if (titleNode && titleNode.innerText.trim()) {
                         const newTitle = titleNode.innerText.trim();
                         const titleSpan = document.querySelector('#gemini-sidebar-floating-title .gemini-float-title-text');
-                        
-                        // 如果标题有变化，且不是空值，就立刻更新外层胶囊
                         if (titleSpan && titleSpan.innerText !== newTitle) {
                             titleSpan.innerText = newTitle;
-                            titleSpan.title = newTitle; // 鼠标悬停显示完整长标题
+                            titleSpan.title = newTitle; 
                         }
                     }
-                } catch (e) {
-                    // 跨域或未加载完时静默忽略
-                }
-            }, 1000); // 每 1 秒检查一次
+                } catch (e) {}
+            }, 1000); 
         };
     } else if (mode === 'search') {
         sidebar.innerHTML = `
             <div id="gemini-sidebar-resizer"></div>
             <div id="gemini-sidebar-header">
                 <div id="gemini-close-sidebar" class="gemini-action-glass-btn" title="关闭搜索">✖</div>
-                
                 <div id="gemini-sidebar-floating-title">
                     <span class="gemini-float-title-icon">🔍</span>
                     <input type="text" id="gemini-search-input" class="gemini-search-input" value="${textContext}" placeholder="输入新词并回车...">
                     <span class="gemini-float-title-action" title="更多">⋮</span>
                 </div>
             </div>
-            <div id="gemini-search-results-container">
-                </div>
+            <div id="gemini-search-results-container"></div>
         `;
         
         document.getElementById('gemini-close-sidebar').addEventListener('click', closeSidebar);
@@ -252,11 +223,9 @@ function openSidebar(textContext, mode) {
         const searchInput = document.getElementById('gemini-search-input');
         const container = document.getElementById('gemini-search-results-container');
 
-        // 【全新抽离】：把请求和渲染逻辑包装成闭包，方便随时调用
         const performSearch = (queryKeyword) => {
-            if (!queryKeyword.trim()) return; // 防误触空搜
+            if (!queryKeyword.trim()) return; 
             container.innerHTML = `<div class="gemini-loading-text">正在从 Google 获取结果... 🕵️‍♂️</div>`;
-            
             chrome.runtime.sendMessage({ action: "fetchGoogleSearch", query: queryKeyword }, (response) => {
                 const currentContainer = document.getElementById('gemini-search-results-container');
                 if (!currentContainer) return; 
@@ -268,19 +237,14 @@ function openSidebar(textContext, mode) {
             });
         };
 
-        // 【绑定交互】：监听输入框的回车事件
         searchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                searchInput.blur(); // 搜完自动失去焦点，收起虚拟键盘
-                performSearch(searchInput.value); // 拿最新的词去搜
+                searchInput.blur(); 
+                performSearch(searchInput.value); 
             }
         });
-        
-        // 防止点击输入框时触发拖拽等意外事件
         searchInput.addEventListener('mousedown', (e) => e.stopPropagation());
-
-        // 首次呼出侧边栏时，自动执行一次初始词汇的搜索
         performSearch(textContext);
     }
     initResizer(sidebar);
@@ -291,7 +255,6 @@ function openSidebar(textContext, mode) {
     }, 50);
 }
 
-// Google 搜索 DOM 清洗模块
 function renderSearchResults(htmlString, container) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
@@ -344,15 +307,12 @@ function renderSearchResults(htmlString, container) {
     });
 
     if (resultsHtml === '') {
-        container.innerHTML = `<div class="gemini-loading-text" style="color: #d93025; line-height: 1.6;">
-            <p>未能解析到结果 😕</p><p style="font-size: 12px;">这可能是因为被 Google 安全机制拦截，或页面结构发生了巨大变化。</p>
-        </div>`;
+        container.innerHTML = `<div class="gemini-loading-text" style="color: #d93025; line-height: 1.6;"><p>未能解析到结果 😕</p></div>`;
     } else {
         container.innerHTML = resultsHtml;
     }
 }
 
-// iframe 与拖拽辅助模块
 function injectCSSIntoIframe(iframeDoc) {
     try {
         const style = iframeDoc.createElement('style');
@@ -366,63 +326,42 @@ function injectCSSIntoIframe(iframeDoc) {
     } catch (e) {}
 }
 
-/**
- * 核心：向 iframe 注入文字、换行并自动将光标定位至末尾
- */
 function injectTextAndSend(iframe, text) {
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    
-    // 寻找 Gemini 的富文本输入区
-    const promptArea = iframeDoc.querySelector('.ql-editor') || 
-                       iframeDoc.querySelector('[contenteditable="true"]');
+    const promptArea = iframeDoc.querySelector('.ql-editor') || iframeDoc.querySelector('[contenteditable="true"]');
 
     if (promptArea) {
-        // 1. 清空当前内容
         promptArea.focus();
         promptArea.innerHTML = '';
 
-        // 2. 创建第一行：引导语 + 引用文本
         const firstLine = iframeDoc.createElement('p');
-        
         const boldGuide = iframeDoc.createElement('strong');
         boldGuide.textContent = "请基于当前上下文：";
-        
         const quoteText = iframeDoc.createTextNode(`“${text}”`);
-        
         firstLine.appendChild(boldGuide);
         firstLine.appendChild(quoteText);
 
-        // 3. 创建第二行：空行（供用户直接输入）
         const secondLine = iframeDoc.createElement('p');
         const br = iframeDoc.createElement('br');
         secondLine.appendChild(br);
 
-        // 4. 将两行插入容器
         promptArea.appendChild(firstLine);
         promptArea.appendChild(secondLine);
 
-        // 5. 【核心重写】：精准光标定位逻辑
         const selection = iframe.contentWindow.getSelection();
         const range = iframeDoc.createRange();
-
-        // 强制定位到第二行（secondLine）的开头，即 br 之前
         range.setStart(secondLine, 0);
         range.collapse(true);
-
         selection.removeAllRanges();
         selection.addRange(range);
 
-        // 6. 派发事件，激活发送按钮
         promptArea.dispatchEvent(new Event('input', { bubbles: true }));
         promptArea.dispatchEvent(new Event('compositionend', { bubbles: true }));
-
-        console.log("已通过节点注入实现换行与末尾对焦");
     } else {
-        // 初始加载可能较慢，轮询检查
         setTimeout(() => injectTextAndSend(iframe, text), 500);
     }
 }
-// 优化版：iframe 与拖拽辅助模块
+
 function initResizer(sidebar) {
     const resizer = document.getElementById('gemini-sidebar-resizer');
     const iframe = document.getElementById('gemini-ghost-frame'); 
@@ -433,18 +372,14 @@ function initResizer(sidebar) {
     resizer.addEventListener('mousedown', (e) => {
         isResizing = true;
         if (iframe) iframe.classList.add('iframe-dragging');
-        
-        // 【核心新增】：打上拖拽状态标签，立刻关闭页面上所有元素的 transition 动画防卡顿
         document.body.classList.add('parallel-dragging'); 
         document.body.style.transition = 'none';
-        
         e.preventDefault(); 
     });
     
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
         const newWidth = window.innerWidth - e.clientX;
-        // 限制侧边栏的最小宽度 300px 和最大宽度 800px
         if (newWidth > 300 && newWidth < 800) {
             document.documentElement.style.setProperty('--parallel-sidebar-width', `${newWidth}px`);
         }
@@ -454,8 +389,6 @@ function initResizer(sidebar) {
         if (isResizing) {
             isResizing = false;
             if (iframe) iframe.classList.remove('iframe-dragging');
-            
-            // 【核心新增】：拖拽结束，移除标签，恢复所有平滑动画
             document.body.classList.remove('parallel-dragging'); 
             document.body.style.transition = 'width 0.3s ease';
         }
@@ -501,20 +434,19 @@ function showConfirmDialog(actionType, customAction = null) {
 
     if (actionType === 'forget') {
         title.textContent = '🗑️ 确认遗忘分支？';
-        desc.textContent = '当前分支对话将被永久清空。这不会对您的主干对话产生任何影响，相当于无事发生。';
+        desc.textContent = '当前分支对话将被永久清空。相当于无事发生。';
         okBtn.style.backgroundColor = '#d93025'; 
         okBtn.textContent = '确认遗忘';
-        // 【核心修改】：将 closeSidebar 替换为真正的物理销毁引擎
         pendingConfirmAction = () => { executeForgetBranch(); }; 
     } else if (actionType === 'merge') {
         title.textContent = '✨ 确认合并至主干？';
-        desc.textContent = '我们将自动提取本分支中 AI 的最后一次回答，并作为上下文填入主页面的输入框中。';
+        desc.textContent = '提取本分支中 AI 的最后一次回答填入主页面。';
         okBtn.style.backgroundColor = '#1a73e8'; 
         okBtn.textContent = '确认合并';
         pendingConfirmAction = () => { mergeToMain(); };
     } else if (actionType === 'delete_node') {
         title.textContent = '🗑️ 确认隐藏此对话？';
-        desc.textContent = '此操作将在当前页面视觉上隐藏该轮问答。刷新网页后记录将从云端恢复。';
+        desc.textContent = '仅在当前页面隐藏该轮问答。';
         okBtn.style.backgroundColor = '#d93025'; 
         okBtn.textContent = '确认隐藏';
         pendingConfirmAction = customAction; 
@@ -580,6 +512,7 @@ function renderTimeline() {
 
         let timeLabel = `对话 ${index + 1}`;
         let qText = data.queryElement.innerText.replace('You said', '').trim() || "【图片/文件内容】";
+        qText = qText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
         let msgBlock = data.queryElement.closest('[data-message-author-role]') || data.queryElement.parentElement.parentElement;
         if (msgBlock) {
@@ -628,13 +561,12 @@ function renderTimeline() {
 
 setInterval(renderTimeline, 2000);
 
-// 【全新增】：核心销毁引擎，利用 DOM 自动化模拟真人物理删除
-// 【终极重构】：带视觉伪装和异步状态机的高级物理销毁引擎
-// 【V3 终极版】：注入式静默删除引擎
+// ==========================================
+// 5. 高级物理销毁引擎
+// ==========================================
 async function executeForgetBranch() {
     const iframe = document.getElementById('gemini-ghost-frame');
     if (!iframe) { 
-        // 兜底：如果窗都没了，确保清理所有胶囊 UI
         closeSidebar(); 
         return; 
     }
@@ -643,19 +575,14 @@ async function executeForgetBranch() {
     
     try {
         const doc = iframe.contentDocument || iframe.contentWindow.document;
-
-        // 1. 空分支直接闪电关闭
         const hasMessages = doc.querySelector('user-query, .query-content, [data-test-id="user-query"]');
         if (!hasMessages) {
-            console.log("Empty branch, fast exit.");
             closeSidebar();
             return; 
         }
 
-        // 2. 状态反馈：立即改变 UI
-        if (forgetBtn) forgetBtn.innerHTML = '⏳ 正在彻底销毁...';
+        if (forgetBtn) forgetBtn.innerHTML = '⏳ 销毁中...';
 
-        // 3. 物理删除流
         const style = doc.createElement('style');
         style.textContent = `navigation-drawer, .v-st-container, header, nav { display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }`;
         doc.head.appendChild(style);
@@ -668,7 +595,6 @@ async function executeForgetBranch() {
             el.dispatchEvent(new MouseEvent('click', opts));
         };
 
-        // 唤起并操作
         const menuBtn = doc.querySelector('button[aria-label*="Menu" i], button[aria-label*="菜单" i]');
         if (menuBtn) humanClick(menuBtn);
         await new Promise(r => setTimeout(r, 600));
@@ -695,53 +621,14 @@ async function executeForgetBranch() {
                 
                 if (confirmBtn) {
                     humanClick(confirmBtn);
-                    // 重要：这里不等待无限长时间，触发即认为“成功捕获”
                     await new Promise(r => setTimeout(r, 500)); 
                 }
             }
         }
-
     } catch (error) {
         console.warn("Delete flow interrupted:", error);
     } finally {
-        // --- 终极修复：强制重置按钮状态并销毁 UI ---
-        if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘分支'; 
-        
-        // 确保 closeSidebar 内部能够处理“销毁中”的所有 DOM 节点
-        console.log("Triggering final UI cleanup...");
+        if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘'; 
         closeSidebar(); 
     }
-}
-
-/**
- * 自动化深色模式适配引擎
- */
-function initDarkModeObserver() {
-  const targetNode = document.body;
-  
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === 'class' || mutation.attributeName === 'style') {
-        const isDark = document.body.classList.contains('dark-theme') || 
-                       getComputedStyle(document.body).backgroundColor === 'rgb(19, 19, 20)'; // Gemini 暗色背景值
-        
-        applyThemeToSidebar(isDark);
-      }
-    });
-  });
-
-  observer.observe(targetNode, { attributes: true });
-}
-
-function applyThemeToSidebar(isDark) {
-  const iframe = document.getElementById('gemini-ghost-frame');
-  if (!iframe) return;
-
-  // 向 iframe 注入主题指令，确保搜索结果也变色
-  if (isDark) {
-    iframe.style.filter = 'invert(0.9) hue-rotate(180deg)'; // 暴力适配搜索页面的简单方案
-    // 或者更优雅地给 iframe 内部发送消息，让它应用自己的暗色 CSS
-  } else {
-    iframe.style.filter = 'none';
-  }
 }
