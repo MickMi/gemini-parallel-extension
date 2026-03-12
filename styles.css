@@ -624,3 +624,106 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
 .gemini-search-input:focus {
     width: 200px; 
 }
+
+/* ========================================================================= */
+/* 时间轴：上下滚动控制按钮与主动唤起悬浮球 */
+/* ========================================================================= */
+
+.gemini-timeline-action-btn {
+    position: absolute;
+    left: 10px; /* 完美对齐轨道中心 (轨道 left:9px, width:2px) */
+    transform: translateX(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--gemini-island-bg, rgba(255,255,255,0.85));
+    border: 1px solid var(--gemini-border, rgba(0,0,0,0.1));
+    color: var(--gemini-text-sub, #5f6368);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* 默认隐藏，由 JS 控制显隐 */
+    opacity: 0;
+    pointer-events: none; 
+}
+
+.gemini-timeline-action-btn.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.gemini-timeline-action-btn:hover {
+    color: #0b57d0;
+    border-color: #0b57d0;
+    background: #e8f0fe;
+    transform: translateX(-50%) scale(1.15);
+}
+
+/* 独立定位 */
+#gemini-timeline-top-btn { top: -36px; }
+#gemini-timeline-bottom-btn { bottom: -36px; }
+
+/* 💡 开启平行推演悬浮球 (常驻显示) */
+#gemini-timeline-fab {
+    position: absolute;
+    /* 【修复1：解决右侧贴边问题】靠右对齐，让胶囊向屏幕内侧（左侧）安全延伸 */
+    right: -6px; 
+    left: auto;
+    /* 移除 translateX 居中，防止向右撑破屏幕 */
+    transform: none; 
+    /* 【微调】：稍微抬高一点，留出与屏幕底部的呼吸空间 */
+    bottom: -60px; 
+    
+    width: auto; 
+    height: auto;
+    padding: 8px 16px;
+    border-radius: 24px;
+    white-space: nowrap; 
+    
+    background: var(--gemini-island-bg, rgba(255,255,255,0.85));
+    border: 1px solid var(--gemini-border, rgba(0,0,0,0.1));
+    color: var(--gemini-text-main, #1f1f1f);
+    
+    display: flex;
+    /* 【核心排版巧思】：文字在左，图标在右，确保图标依然完美压在时间轴上 */
+    flex-direction: row-reverse; 
+    align-items: center;
+    gap: 8px; 
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 20;
+    box-shadow: var(--gemini-shadow, 0 4px 16px rgba(0,0,0,0.1));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#gemini-timeline-fab:hover {
+    /* 悬停时只做轻微的上浮，不再做全局放大，避免长胶囊放大带来的突兀感 */
+    transform: translateY(-2px); 
+    background: #e8f0fe;
+    border-color: #0b57d0;
+    color: #0b57d0;
+}
+
+/* 【修复2：视觉减负】当平行窗口打开时，主页面的胶囊自动隐身退场 */
+body.parallel-open #gemini-timeline-fab {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    /* 增加一个向下沉降并缩小的退场动画，显得更丝滑 */
+    transform: translateY(15px) scale(0.9) !important; 
+}
+
+/* 深色模式适配 */
+@media (prefers-color-scheme: dark) {
+    .gemini-timeline-action-btn:hover, #gemini-timeline-fab:hover {
+        background: rgba(26, 115, 232, 0.2);
+    }
+}

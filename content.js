@@ -186,7 +186,11 @@ function openSidebar(textContext, mode) {
         iframe.onload = () => {
             if (iframe.src === 'about:blank') return;
             injectCSSIntoIframe(iframe.contentDocument || iframe.contentWindow.document);
-            injectTextAndSend(iframe, textContext);
+            
+            // 【核心修改】：只有当 textContext 有真实内容时，才去向输入框注入并发送文字
+            if (textContext && textContext.trim() !== '') {
+                injectTextAndSend(iframe, textContext);
+            }
             
             if (titlePollInterval) clearInterval(titlePollInterval);
             titlePollInterval = setInterval(() => {
@@ -463,14 +467,74 @@ function renderTimeline() {
     if (!document.getElementById('gemini-timeline-container')) {
         timelineContainer = document.createElement('div');
         timelineContainer.id = 'gemini-timeline-container';
-        timelineContainer.innerHTML = `<div id="gemini-timeline-track"></div>`;
+        
+        // 注入包含四个组件的 HTML
+        timelineContainer.innerHTML = `
+            <div id="gemini-timeline-top-btn" class="gemini-timeline-action-btn" title="回到首条对话">↑</div>
+            <div id="gemini-timeline-track"></div>
+            <div id="gemini-timeline-bottom-btn" class="gemini-timeline-action-btn" title="前往最新对话">↓</div>
+            <div id="gemini-timeline-fab" title="主动开启平行推演"><span style="font-size: 16px;">💡</span> 平行窗口</div>
+        `;
         
         timelineContainer.addEventListener('mouseenter', () => { isHoveringTimeline = true; });
         timelineContainer.addEventListener('mouseleave', () => { isHoveringTimeline = false; });
         document.body.appendChild(timelineContainer);
+
+        // --- 绑定点击事件 ---
+        // 1. 主动唤起按钮
+        // 2. 修改点击事件传参：传一个空字符串 '' 过去
+        document.getElementById('gemini-timeline-fab').addEventListener('click', () => {
+            openSidebar('', 'chat'); // 【核心修改】：传空字符串，代表不需要任何上下文
+        });
+
+        // 2. 回到顶部
+        document.getElementById('gemini-timeline-top-btn').addEventListener('click', () => {
+            const queries = document.querySelectorAll('.query-text');
+            if (queries.length > 0) queries[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        // 3. 前往底部
+        document.getElementById('gemini-timeline-bottom-btn').addEventListener('click', () => {
+            const queries = document.querySelectorAll('.query-text');
+            if (queries.length > 0) queries[queries.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        // --- 核心防抖滚动检测引擎：判断是否需要显示上下箭头 ---
+        const checkScroll = () => {
+            const topBtn = document.getElementById('gemini-timeline-top-btn');
+            const bottomBtn = document.getElementById('gemini-timeline-bottom-btn');
+            if (!topBtn || !bottomBtn) return;
+
+            const queries = document.querySelectorAll('.query-text');
+            if (queries.length === 0) {
+                topBtn.classList.remove('show');
+                bottomBtn.classList.remove('show');
+                return;
+            }
+
+            const firstRect = queries[0].getBoundingClientRect();
+            const lastRect = queries[queries.length - 1].getBoundingClientRect();
+
+            // 如果第一条对话已经被卷到屏幕上方不可见处
+            if (firstRect.top < 0) topBtn.classList.add('show');
+            else topBtn.classList.remove('show');
+
+            // 如果最后一条对话还隐藏在屏幕下方未滚动到
+            if (lastRect.bottom > window.innerHeight) bottomBtn.classList.add('show');
+            else bottomBtn.classList.remove('show');
+        };
+
+        // 监听浏览器全局滚动事件 (使用 true 捕获模式，无视嵌套结构)
+        document.addEventListener('scroll', checkScroll, true);
+        window.addEventListener('resize', checkScroll);
+        
+        // 将检测函数挂载到容器上，方便每次刷新时间轴时主动校准一次
+        timelineContainer.checkScroll = checkScroll;
     } else {
         timelineContainer = document.getElementById('gemini-timeline-container');
     }
+
+    // 在这之后是你原本抓取 queries 渲染 node 的代码...
 
     if (isHoveringTimeline) return;
 
@@ -557,6 +621,8 @@ function renderTimeline() {
         }
         timelineContainer.appendChild(node);
     });
+    // 每次时间轴节点重绘完毕后，主动执行一次位置校准
+    if (timelineContainer.checkScroll) timelineContainer.checkScroll();
 }
 
 setInterval(renderTimeline, 2000);
