@@ -561,6 +561,196 @@ function renderTimeline() {
         
         chatData.push({ queryElement: q, responseElement: r, topOffset: cumulativeHeight });
         cumulativeHeight += blockHeight;
+
+        // ==================================================================
+        // 【完全体】：带选项、自动展开、防阻塞与专属水印的长图引擎
+        // ==================================================================
+        if (r) {
+            const targetParent = r.parentElement;
+            
+            if (targetParent && !targetParent.querySelector('.gemini-screenshot-wrapper')) {
+                const btnWrapper = document.createElement('div');
+                btnWrapper.className = 'gemini-screenshot-wrapper html2canvas-ignore'; 
+                btnWrapper.style.cssText = 'display: flex !important; justify-content: flex-end; margin-top: 10px; width: 100%;';
+                
+                // 【UI 升级】：注入包含下拉菜单的 DOM 结构
+                btnWrapper.innerHTML = `
+                    <div class="gemini-screenshot-dropdown">
+                        <button class="gemini-screenshot-btn" title="保存完整高清长图">📸 存为长图</button>
+                        <div class="gemini-screenshot-menu">
+                            <div class="gemini-screenshot-option" data-mode="answer">✨ 仅保存此回答</div>
+                            <div class="gemini-screenshot-option" data-mode="both">💬 包含完整问答</div>
+                        </div>
+                    </div>
+                `;
+                
+                if (r.nextSibling) targetParent.insertBefore(btnWrapper, r.nextSibling);
+                else targetParent.appendChild(btnWrapper);
+                
+                const dropdown = btnWrapper.querySelector('.gemini-screenshot-dropdown');
+                const mainBtn = btnWrapper.querySelector('.gemini-screenshot-btn');
+                const options = btnWrapper.querySelectorAll('.gemini-screenshot-option');
+                
+                // 遍历绑定两个菜单项的点击事件
+                options.forEach(opt => {
+                    opt.addEventListener('click', async (e) => {
+                        e.stopPropagation(); // 阻止事件冒泡
+                        if (mainBtn.innerText.includes('正在')) return; 
+
+                        const includeQuery = opt.getAttribute('data-mode') === 'both';
+                        
+                        // 1. 状态变更：锁死 UI，防止重复点击
+                        const originalText = mainBtn.innerHTML;
+                        mainBtn.innerHTML = '⏳ 生成中...';
+                        mainBtn.style.opacity = '0.7';
+                        dropdown.style.pointerEvents = 'none'; 
+                        btnWrapper.querySelector('.gemini-screenshot-menu').style.display = 'none'; // 强制隐藏菜单
+                        
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        
+                        // 记录被我们临时隐身的元素，稍后恢复
+                        let ignoredElements = [];
+                        
+                        try {
+                            const qBlock = q.closest('user-message, user-query, [data-test-id="user-message"], .user-message-container') || q.parentElement.parentElement;
+                            const rBlock = r.closest('model-message, [data-test-id="model-message"], .model-message-container') || targetParent;
+                            
+                            const isDark = document.body.classList.contains('dark-theme') || getComputedStyle(document.body).backgroundColor === 'rgb(19, 19, 20)';
+                            const bgColor = isDark ? '#131314' : '#ffffff';
+                            const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+
+                            // ==========================================
+                            // 【核心修复 1】：创建“绝对隐身”的外壳，彻底断绝鬼影
+                            // ==========================================
+                            const ghostWrapper = document.createElement('div');
+                            ghostWrapper.style.cssText = 'position: fixed; top: 0; left: 0; width: 0; height: 0; overflow: hidden; z-index: -9999; pointer-events: none;';
+
+                            const virtualBoard = document.createElement('div');
+                            const rWidth = rBlock.offsetWidth || Math.min(window.innerWidth * 0.8, 800); 
+                            
+                            virtualBoard.style.cssText = `
+                                width: ${rWidth}px;
+                                background-color: ${bgColor};
+                                padding: 40px;
+                                box-sizing: border-box;
+                            `;
+
+                            // ==========================================
+                            // 【核心修复 2】：时间冻结，瞬间掐断所有复播动画
+                            // ==========================================
+                            const noAnimationStyle = document.createElement('style');
+                            noAnimationStyle.textContent = '* { animation: none !important; transition: none !important; }';
+                            virtualBoard.appendChild(noAnimationStyle);
+
+                            // ==========================================
+                            // 区域 1：「问题区」
+                            // ==========================================
+                            if (includeQuery && q) {
+                                const qBgColor = isDark ? '#2a2a2a' : '#f0f4f9';
+                                const textColor = isDark ? '#e3e3e3' : '#1f1f1f';
+
+                                const qCloneForText = q.cloneNode(true);
+                                qCloneForText.querySelectorAll('button, mat-icon, [role="button"], svg').forEach(el => el.remove());
+                                let fullText = qCloneForText.textContent.replace(/You said/gi, '').trim();
+
+                                const qArea = document.createElement('div');
+                                qArea.style.cssText = `
+                                    background-color: ${qBgColor};
+                                    color: ${textColor};
+                                    padding: 24px;
+                                    border-radius: 16px;
+                                    margin-bottom: 32px;
+                                    font-size: 16px;
+                                    line-height: 1.6;
+                                    white-space: pre-wrap; 
+                                    word-break: break-word;
+                                    border: 1px solid ${borderColor};
+                                `;
+                                qArea.innerHTML = `<div style="font-size: 13px; font-weight: bold; margin-bottom: 12px; color: ${isDark?'#9aa0a6':'#5f6368'};">🙋‍♂️ 我的提问</div>${fullText}`;
+                                virtualBoard.appendChild(qArea);
+                            }
+
+                            // ==========================================
+                            // 区域 2：「回答区」
+                            // ==========================================
+                            const rAreaWrapper = document.createElement('div');
+                            rAreaWrapper.style.width = '100%';
+                            rAreaWrapper.innerHTML = `<div style="font-size: 13px; font-weight: bold; margin-bottom: 16px; color: ${isDark?'#9aa0a6':'#5f6368'};">✨ Gemini 的推演回答</div>`;
+
+                            const rClone = rBlock.cloneNode(true);
+                            rClone.style.width = '100%';
+                            rClone.style.maxWidth = '100%';
+                            
+                            // 【核心增强】：暴力解除长代码块的滚动条，让其在长图中完全铺开展开
+                            rClone.style.setProperty('max-height', 'none', 'important');
+                            rClone.style.setProperty('overflow', 'visible', 'important');
+                            rClone.querySelectorAll('*').forEach(el => {
+                                const style = window.getComputedStyle(el);
+                                if (style.overflow === 'auto' || style.overflow === 'hidden' || style.maxHeight !== 'none') {
+                                    el.style.setProperty('overflow', 'visible', 'important');
+                                    el.style.setProperty('max-height', 'none', 'important');
+                                    el.style.setProperty('height', 'auto', 'important');
+                                }
+                            });
+                            
+                            rClone.querySelectorAll('.gemini-screenshot-wrapper, user-feedback, [data-test-id="bottom-actions"]').forEach(el => el.remove());
+                            rAreaWrapper.appendChild(rClone);
+                            virtualBoard.appendChild(rAreaWrapper);
+
+                            // ==========================================
+                            // 区域 3：专属底部水印
+                            // ==========================================
+                            const watermark = document.createElement('div');
+                            watermark.style.cssText = `
+                                text-align: center;
+                                padding-top: 32px;
+                                margin-top: 32px;
+                                border-top: 1px dashed ${borderColor};
+                                color: #9aa0a6;
+                                font-size: 13px;
+                                font-weight: 500;
+                                opacity: 0.8;
+                                letter-spacing: 0.5px;
+                            `;
+                            watermark.innerText = '✨ Generated by Gemini Parallel Plugin';
+                            virtualBoard.appendChild(watermark);
+
+                            // 挂载到独立外壳，外壳再挂载到 body，完全脱离原始排版流
+                            ghostWrapper.appendChild(virtualBoard);
+                            document.body.appendChild(ghostWrapper);
+
+                            // 留出 150ms 让浏览器后台绘制
+                            await new Promise(res => setTimeout(res, 150));
+
+                            // 调用引擎对已经画好的虚拟画板进行拍照
+                            const canvasUrl = await window.htmlToImage.toPng(virtualBoard, {
+                                pixelRatio: 2, 
+                                backgroundColor: bgColor,
+                                fontEmbedCSS: '', 
+                                style: { transform: 'none' }
+                            });
+                            
+                            const link = document.createElement('a');
+                            link.download = `Gemini_推演长图_${new Date().getTime()}.png`;
+                            link.href = canvasUrl;
+                            link.click();
+
+                            // 阅后即焚
+                            ghostWrapper.remove();
+                            
+                        } catch (error) {
+                            console.error("截图引擎报错:", error);
+                            alert("长图生成失败！请确认环境或查看 F12 日志。");
+                        } finally {
+                            mainBtn.innerHTML = originalText;
+                            mainBtn.style.opacity = '1';
+                            dropdown.style.pointerEvents = 'auto';
+                            btnWrapper.querySelector('.gemini-screenshot-menu').style.display = ''; 
+                        }
+                    });
+                });
+            }
+        }
     });
 
     const trackMaxHeight = Math.max(cumulativeHeight, 800);
