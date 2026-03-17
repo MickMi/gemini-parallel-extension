@@ -684,13 +684,26 @@ function renderTimeline() {
                             // 【核心增强】：暴力解除长代码块的滚动条，让其在长图中完全铺开展开
                             rClone.style.setProperty('max-height', 'none', 'important');
                             rClone.style.setProperty('overflow', 'visible', 'important');
+                            // ==========================================
+                            // 【终极排版修复】：解除高度限制，并强制所有长文本安全换行
+                            // ==========================================
                             rClone.querySelectorAll('*').forEach(el => {
-                                const style = window.getComputedStyle(el);
-                                if (style.overflow === 'auto' || style.overflow === 'hidden' || style.maxHeight !== 'none') {
-                                    el.style.setProperty('overflow', 'visible', 'important');
-                                    el.style.setProperty('max-height', 'none', 'important');
-                                    el.style.setProperty('height', 'auto', 'important');
-                                }
+                                // 1. 解除原生高度限制，让内容完全铺开
+                                el.style.setProperty('max-height', 'none', 'important');
+                                el.style.setProperty('height', 'auto', 'important');
+                                
+                                // 2. 核心修复：对付超长链接和代码块的“越狱”行为
+                                // 强制允许在单词内断行（专治超长 URL 和无空格英文字符串）
+                                el.style.setProperty('word-break', 'break-word', 'important');
+                                el.style.setProperty('overflow-wrap', 'anywhere', 'important');
+                                // 将强制不换行的 pre 改为保留空格但允许换行的 pre-wrap
+                                el.style.setProperty('white-space', 'pre-wrap', 'important');
+                                // 限制最大宽度不允许撑破父级容器
+                                el.style.setProperty('max-width', '100%', 'important');
+                                
+                                // 3. 防止左右溢出导致截图产生大片空白
+                                el.style.setProperty('overflow-x', 'hidden', 'important');
+                                el.style.setProperty('overflow-y', 'visible', 'important');
                             });
                             
                             rClone.querySelectorAll('.gemini-screenshot-wrapper, user-feedback, [data-test-id="bottom-actions"]').forEach(el => el.remove());

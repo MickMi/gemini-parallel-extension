@@ -1,4 +1,4 @@
-# ♊ Gemini Parallel & Search Tool
+# ♊ Gemini Parallel Plugin
 **让 Gemini 具备“平行推演”与“同屏搜索”能力的交互增强工具。**
 
 目标是让 AI 交互系统同时具备：
