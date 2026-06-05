@@ -671,20 +671,17 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
 }
 
 /* 独立定位 */
-#gemini-timeline-top-btn { top: -36px; }
-#gemini-timeline-bottom-btn { bottom: 8px; }
+/* 【2026-06-05 重新布局 v3】：从顶到底严格线性布局
+   —— ↑ 按钮（容器外 64px）→ 间隔 30px → 时间轴 → 间隔 32px → ↓ 按钮（容器外 64px）→ 间隔 32px → destroy-fab → 间隔 8px → fab
+   —— 之前 bottom: 8px 容器内 → ↓ 按钮完全覆盖最后几个节点（用户反馈"完全覆盖"） */
+#gemini-timeline-top-btn { top: -64px; }
+#gemini-timeline-bottom-btn { bottom: -64px; }
 
-/* 💡 开启平行推演悬浮球 (常驻显示)
-   【2026-06-05 ADR-2 重构】：从 position: absolute（嵌在时间轴容器内）改为 position: fixed
-   —— 视觉对齐时间轴（right: 30px，和容器同 right），但 DOM/CSS 独立，不嵌在容器内
-   —— 彻底解决 30px 容器 + 100px 胶囊 横向 100% 覆盖节点和 ↑↓ 按钮的 overlap 问题 */
+/* 💡 开启平行搜索胶囊：跟随时间轴，向左展开，右侧留出呼吸空间 */
 #gemini-timeline-fab {
-    position: fixed;
-    /* 视觉对齐时间轴容器 #gemini-timeline-container 的 right: 30px */
-    right: 30px;
-    /* 屏幕底上方位置：destroy-fab 底（屏幕底上方 156px）再下方 8px 间距
-       —— fab 顶 = 屏幕底上方 148px，底 = 屏幕底上方 112px（高度 ~36px） */
-    bottom: 112px;
+    position: absolute;
+    right: 10px;
+    bottom: -160px;
     
     width: auto; 
     height: auto;
@@ -717,17 +714,11 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
     color: #0b57d0;
 }
 
-/* 🗑️ 销毁主屏当前会话悬浮球
-   【2026-06-05 ADR-2 重构】：从 position: absolute（嵌在时间轴容器内）改为 position: fixed
-   —— 视觉对齐时间轴（right: 30px），但 DOM/CSS 独立
-   —— 顶在容器底下方 8px 间距（destroy-fab 顶 = 屏幕底上方 192px = 容器底 200px 之下 8px） */
+/* 🗑️ 销毁窗口胶囊：位于 ↓ 按钮下方，跟随时间轴，向左展开 */
 #gemini-timeline-destroy-fab {
-    position: fixed;
-    /* 视觉对齐时间轴容器 #gemini-timeline-container 的 right: 30px */
-    right: 30px;
-    /* 屏幕底上方位置：容器底（屏幕底上方 200px）再下方 8px 间距
-       —— destroy-fab 顶 = 屏幕底上方 192px，底 = 屏幕底上方 156px（高度 ~36px） */
-    bottom: 156px;
+    position: absolute;
+    right: 10px;
+    bottom: -114px;
 
     width: auto;
     height: auto;
