@@ -103,6 +103,14 @@ const closeSidebar = () => {
         clearInterval(titlePollInterval);
         titlePollInterval = null; 
     }
+
+    // 【2026-06-04 Reviewer Critical #1 修复】：关掉侧栏时清理侧栏时间轴的 setInterval
+    // 之前漏了：interval 闭包持有 iframeDoc 引用 → 阻止 GC 回收 iframe → 内存泄漏
+    const iframe = document.getElementById('gemini-ghost-frame');
+    if (iframe && iframe._sidebarTimelineInterval) {
+        clearInterval(iframe._sidebarTimelineInterval);
+        iframe._sidebarTimelineInterval = null;
+    }
 };
 
 function renderMainFloatingTitle() {
@@ -185,8 +193,24 @@ function openSidebar(textContext, mode) {
         const iframe = document.getElementById('gemini-ghost-frame');
         iframe.onload = () => {
             if (iframe.src === 'about:blank') return;
-            injectCSSIntoIframe(iframe.contentDocument || iframe.contentWindow.document);
-            
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            injectCSSIntoIframe(iframeDoc);
+
+            // 【新增】在侧栏 iframe 内创建独立时间轴（每个会话/窗口独立）
+            // 按用户决定：侧栏时间轴不嵌 FAB（侧栏标题栏的 🗑️ 遗忘继续用）
+            renderSidebarTimelineInIframe(iframe);
+            // 启动周期渲染（用 iframe 自身存 interval ID，避免多 iframe 累积）
+            if (iframe._sidebarTimelineInterval) clearInterval(iframe._sidebarTimelineInterval);
+            iframe._sidebarTimelineInterval = setInterval(() => {
+                // 【2026-06-04 Reviewer Critical #2 修复】：setInterval 回调本身也包 try/catch
+                // 防止 renderSidebarTimelineInIframe 抛错时整条 setInterval 链路崩
+                try {
+                    renderSidebarTimelineInIframe(iframe);
+                } catch (e) {
+                    // 任何意外错误，silently ignore（避免刷控制台）
+                }
+            }, 2000);
+
             // 【核心修改】：只有当 textContext 有真实内容时，才去向输入框注入并发送文字
             if (textContext && textContext.trim() !== '') {
                 injectTextAndSend(iframe, textContext);
@@ -321,13 +345,205 @@ function injectCSSIntoIframe(iframeDoc) {
     try {
         const style = iframeDoc.createElement('style');
         style.textContent = `
+            /* === 透明化主框架，让侧栏看起来像 overlay === */
             header { display: none !important; }
             navigation-drawer, nav, [aria-label="Navigation drawer"] { display: none !important; }
             body, app-root, main { background: transparent !important; background-color: transparent !important; }
             .chat-history { padding-top: 10px !important; padding-bottom: 80px !important; }
+
+            /* === 侧栏时间轴（id 前缀 gemini-sidebar-timeline-*，与主屏 #gemini-timeline-* 隔离）===
+               按用户决定：侧栏时间轴不嵌 FAB（避免太乱），侧栏标题栏的 🗑️ 遗忘按钮继续用 */
+            #gemini-sidebar-timeline-container {
+                position: fixed !important;
+                right: 20px !important;
+                /* 侧栏顶部有"平行推演分支"标题栏（约 60-80px），所以 top 给大些 */
+                top: 90px !important;
+                bottom: 100px !important;
+                width: 30px !important;
+                z-index: 9999 !important;
+                pointer-events: auto !important;
+            }
+            #gemini-sidebar-timeline-track {
+                position: absolute;
+                left: 9px;
+                top: 0;
+                bottom: 0;
+                width: 2px;
+                background: #dadce0;
+            }
+            .gemini-sidebar-node {
+                position: absolute;
+                left: 4px;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #a8c7fa;
+                border: 2px solid #ffffff;
+                pointer-events: auto;
+                transform: translateY(-50%);
+                transition: all 0.2s ease;
+            }
+            .gemini-sidebar-node:hover {
+                background: #0b57d0;
+                transform: translateY(-50%) scale(1.3);
+                z-index: 10;
+            }
+            .gemini-sidebar-timeline-action-btn {
+                position: absolute;
+                left: 10px;
+                transform: translateX(-50%);
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                background: var(--gemini-island-bg, rgba(255,255,255,0.85));
+                border: 1px solid var(--gemini-border, rgba(0,0,0,0.1));
+                color: var(--gemini-text-sub, #5f6368);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                font-weight: bold;
+                cursor: pointer;
+                z-index: 10;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                opacity: 0;
+                pointer-events: none;
+            }
+            .gemini-sidebar-timeline-action-btn.show {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .gemini-sidebar-timeline-action-btn:hover {
+                color: #0b57d0;
+                border-color: #0b57d0;
+                background: #e8f0fe;
+                transform: translateX(-50%) scale(1.15);
+            }
+            #gemini-sidebar-timeline-top-btn { top: -36px; }
+            #gemini-sidebar-timeline-bottom-btn { bottom: -36px; }
         `;
         iframeDoc.head.appendChild(style);
     } catch (e) {}
+}
+
+// ============================================================================
+// 侧栏时间轴：在 iframe.contentDocument 内独立创建时间轴（无 FAB）
+// 每个会话（窗口）独立 —— 主屏时间轴在主屏 doc 内、侧栏时间轴在侧栏 iframe doc 内
+// 侧栏时间轴嵌在 iframe 内，fixed 在 iframe viewport 右侧
+// 按用户决定：侧栏不嵌 FAB（避免视觉杂乱），仅 ↑↓ 跳转按钮 + 节点
+// ============================================================================
+function renderSidebarTimelineInIframe(iframe) {
+    // 【2026-06-04 Reviewer Critical #2 修复】：包 try/catch，防止 iframeDoc 不可访问时抛错刷控制台
+    // 侧栏关闭中途 / iframe 被 GC 后，iframeDoc.body 可能不可访问 → 不包会刷错
+    try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        if (!iframeDoc || !iframeDoc.body) return;
+
+    // 1. 首次创建时间轴容器（只在不存在时创建）
+    let container = iframeDoc.getElementById('gemini-sidebar-timeline-container');
+    if (!container) {
+        container = iframeDoc.createElement('div');
+        container.id = 'gemini-sidebar-timeline-container';
+        container.innerHTML = `
+            <div id="gemini-sidebar-timeline-top-btn" class="gemini-sidebar-timeline-action-btn" title="回到首条对话">↑</div>
+            <div id="gemini-sidebar-timeline-track"></div>
+            <div id="gemini-sidebar-timeline-bottom-btn" class="gemini-sidebar-timeline-action-btn" title="前往最新对话">↓</div>
+        `;
+        iframeDoc.body.appendChild(container);
+
+        // 绑定 ↑↓ 按钮
+        const topBtn = iframeDoc.getElementById('gemini-sidebar-timeline-top-btn');
+        const bottomBtn = iframeDoc.getElementById('gemini-sidebar-timeline-bottom-btn');
+
+        if (topBtn) {
+            topBtn.addEventListener('click', () => {
+                const queries = iframeDoc.querySelectorAll('.query-text');
+                if (queries.length > 0) queries[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        }
+        if (bottomBtn) {
+            bottomBtn.addEventListener('click', () => {
+                const queries = iframeDoc.querySelectorAll('.query-text');
+                if (queries.length > 0) queries[queries.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        }
+
+        // 防抖滚动检测（HEAD 模式：true 捕获模式，监听 iframe doc 滚动）
+        const checkScroll = () => {
+            if (!topBtn || !bottomBtn) return;
+            const queries = iframeDoc.querySelectorAll('.query-text');
+            if (queries.length === 0) {
+                topBtn.classList.remove('show');
+                bottomBtn.classList.remove('show');
+                return;
+            }
+            const firstRect = queries[0].getBoundingClientRect();
+            const lastRect = queries[queries.length - 1].getBoundingClientRect();
+            const viewH = (iframeDoc.defaultView || iframe.contentWindow).innerHeight;
+            if (firstRect.top < 0) topBtn.classList.add('show');
+            else topBtn.classList.remove('show');
+            if (lastRect.bottom > viewH) bottomBtn.classList.add('show');
+            else bottomBtn.classList.remove('show');
+        };
+        iframeDoc.addEventListener('scroll', checkScroll, true);
+        (iframeDoc.defaultView || iframe.contentWindow).addEventListener('resize', checkScroll);
+        container.checkScroll = checkScroll;
+    }
+
+    // 2. 渲染节点（每次都跑）
+    if (container.isHoveringSidebarTimeline) return;  // 简化：暂不锁 hover
+
+    const queries = Array.from(iframeDoc.querySelectorAll('.query-text'));
+    if (queries.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+
+    // 清旧节点
+    const oldNodes = container.querySelectorAll('.gemini-sidebar-node');
+    oldNodes.forEach(n => n.remove());
+
+    // 计算 cumulativeHeight（与主屏 renderTimeline 一致）
+    let cumulativeHeight = 0;
+    const chatData = [];
+    const iframeResponses = Array.from(iframeDoc.querySelectorAll('message-content'));
+    queries.forEach((q, i) => {
+        const r = iframeResponses[i];
+        const qHeight = q.offsetHeight || 50;
+        const rHeight = r ? r.offsetHeight : 50;
+        const blockHeight = qHeight + rHeight + 60;
+        chatData.push({ queryElement: q, responseElement: r, topOffset: cumulativeHeight });
+        cumulativeHeight += blockHeight;
+    });
+
+    const trackMaxHeight = Math.max(cumulativeHeight, 800);
+
+    chatData.forEach((data, index) => {
+        let topPercentage = (data.topOffset / trackMaxHeight) * 100;
+        topPercentage = Math.min(topPercentage, 98);
+
+        const node = iframeDoc.createElement('div');
+        node.className = 'gemini-sidebar-node';
+        node.style.top = `${topPercentage}%`;
+
+        // 简单 tooltip：仅显示"对话 N"
+        node.innerHTML = `<div class="gemini-sidebar-tooltip">对话 ${index + 1}</div>`;
+
+        node.addEventListener('click', () => {
+            data.queryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        container.appendChild(node);
+    });
+
+    // 校准一次 ↑↓ 按钮
+    if (container.checkScroll) container.checkScroll();
+    } catch (e) {
+        // iframe 已被移除 / body 不可访问 / 任何其他异常 → silently ignore
+        // 关键是不要把错误抛到 setInterval 回调里（会刷控制台）
+    }
 }
 
 function injectTextAndSend(iframe, text) {
@@ -442,6 +658,12 @@ function showConfirmDialog(actionType, customAction = null) {
         okBtn.style.backgroundColor = '#d93025'; 
         okBtn.textContent = '确认遗忘';
         pendingConfirmAction = () => { executeForgetBranch(); }; 
+    } else if (actionType === 'forget_main') {
+        title.textContent = '🗑️ 确认销毁当前会话？';
+        desc.textContent = '主屏幕当前会话将被永久从云端删除，此操作不可恢复。';
+        okBtn.style.backgroundColor = '#d93025';
+        okBtn.textContent = '永久销毁';
+        pendingConfirmAction = () => { destroyMainConversation(); };
     } else if (actionType === 'merge') {
         title.textContent = '✨ 确认合并至主干？';
         desc.textContent = '提取本分支中 AI 的最后一次回答填入主页面。';
@@ -468,11 +690,12 @@ function renderTimeline() {
         timelineContainer = document.createElement('div');
         timelineContainer.id = 'gemini-timeline-container';
         
-        // 注入包含四个组件的 HTML
+        // 注入包含五个组件的 HTML（2 个 FAB 都嵌在时间轴内，紧贴时间轴）
         timelineContainer.innerHTML = `
             <div id="gemini-timeline-top-btn" class="gemini-timeline-action-btn" title="回到首条对话">↑</div>
             <div id="gemini-timeline-track"></div>
             <div id="gemini-timeline-bottom-btn" class="gemini-timeline-action-btn" title="前往最新对话">↓</div>
+            <div id="gemini-timeline-destroy-fab" title="销毁当前会话（永久删除云端记录）"><span style="font-size: 16px;">🗑️</span> 销毁会话</div>
             <div id="gemini-timeline-fab" title="主动开启平行推演"><span style="font-size: 16px;">💡</span> 平行窗口</div>
         `;
         
@@ -481,10 +704,14 @@ function renderTimeline() {
         document.body.appendChild(timelineContainer);
 
         // --- 绑定点击事件 ---
-        // 1. 主动唤起按钮
-        // 2. 修改点击事件传参：传一个空字符串 '' 过去
+        // 1. 主动唤起按钮：传空字符串，代表不需要任何上下文
         document.getElementById('gemini-timeline-fab').addEventListener('click', () => {
-            openSidebar('', 'chat'); // 【核心修改】：传空字符串，代表不需要任何上下文
+            openSidebar('', 'chat');
+        });
+
+        // 1.5 销毁主屏幕当前会话：弹出确认框，确认后物理删除
+        document.getElementById('gemini-timeline-destroy-fab').addEventListener('click', () => {
+            showConfirmDialog('forget_main');
         });
 
         // 2. 回到顶部
@@ -835,69 +1062,315 @@ setInterval(renderTimeline, 2000);
 // ==========================================
 async function executeForgetBranch() {
     const iframe = document.getElementById('gemini-ghost-frame');
-    if (!iframe) { 
-        closeSidebar(); 
-        return; 
+    if (!iframe) {
+        closeSidebar();
+        return;
     }
 
     const forgetBtn = document.getElementById('gemini-btn-forget');
-    
-    try {
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        const hasMessages = doc.querySelector('user-query, .query-content, [data-test-id="user-query"]');
-        if (!hasMessages) {
-            closeSidebar();
-            return; 
+    // 本地 debug log
+    const log = (...args) => console.log('[Gemini-Forget]', ...args);
+    // 按钮状态机：用户能看到销毁进展 & 出错时知道具体卡点
+    const setBtnState = (state, tip) => {
+        if (!forgetBtn) return;
+        const map = {
+            idle:    { html: '🗑️ 遗忘', color: '',         title: '点击销毁当前分支' },
+            working: { html: '⏳ 销毁中...', color: '',      title: '正在清理云端历史...' },
+            done:    { html: '✅ 已销毁', color: '#0b8043',  title: '分支已物理抹除' },
+            error:   { html: '❌ 失败',  color: '#d93025',   title: tip || '请查看控制台日志' },
+        };
+        const s = map[state] || map.idle;
+        forgetBtn.innerHTML = s.html;
+        forgetBtn.style.color = s.color;
+        forgetBtn.title = s.title;
+    };
+
+    // 轮询等待：替代固定 setTimeout，元素晚到也能等到
+    const waitFor = async (selectorFn, timeout = 3000, interval = 80) => {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            try {
+                const el = selectorFn();
+                if (el) return el;
+            } catch (_) { /* doc 切上下文时可能抛错，吞掉继续等 */ }
+            await new Promise(r => setTimeout(r, interval));
         }
+        return null;
+    };
 
-        if (forgetBtn) forgetBtn.innerHTML = '⏳ 销毁中...';
-
-        const style = doc.createElement('style');
-        style.textContent = `navigation-drawer, .v-st-container, header, nav { display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }`;
-        doc.head.appendChild(style);
-
-        const humanClick = (el) => {
-            if (!el) return;
+    // 模拟真人点击：mousedown + mouseup + click + pointerup，避开 Material 组件的 pointerdown 守卫
+    const humanClick = (el) => {
+        if (!el) return false;
+        try {
             const opts = { view: iframe.contentWindow, bubbles: true, cancelable: true, buttons: 1 };
             el.dispatchEvent(new MouseEvent('mousedown', opts));
             el.dispatchEvent(new MouseEvent('mouseup', opts));
             el.dispatchEvent(new MouseEvent('click', opts));
+            el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerType: 'mouse' }));
+            return true;
+        } catch (_) { return false; }
+    };
+
+    // 文本归一 + Delete 识别
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const isDeleteText = (txt) => {
+        const t = norm(txt).toLowerCase();
+        if (!t || t.length > 30) return false;
+        return t === 'delete' || t === '删除' || t === 'remove' || t.includes('delete conversation') || t.includes('删除对话');
+    };
+
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        const hasMessages = doc.querySelector('user-query, .query-content, [data-test-id="user-query"], message-content, [data-test-id="model-response"]');
+        if (!hasMessages) {
+            closeSidebar();
+            return;
+        }
+        setBtnState('working');
+
+        // 强制显示侧边导航（iframe 场景下确保菜单能展开）
+        const oldStyle = doc.getElementById('gemini-forget-rescue-style');
+        if (oldStyle) oldStyle.remove();
+        const style = doc.createElement('style');
+        style.id = 'gemini-forget-rescue-style';
+        style.textContent = `
+            navigation-drawer, .v-st-container, header, nav {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+        `;
+        doc.head && doc.head.appendChild(style);
+
+        // 1. 打开侧边导航
+        const findMenuBtn = () => doc.querySelector(
+            'button[aria-label*="Menu" i], button[aria-label*="菜单" i]'
+        );
+        const menuBtn = await waitFor(findMenuBtn, 1500);
+        if (menuBtn) {
+            humanClick(menuBtn);
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // 2. 找到当前会话（data-testid 和 data-test-id 双写支持）
+        const findSelectedConversation = () => {
+            const candidates = [
+                'a[data-test-id="conversation"].selected',
+                'a[data-testid="conversation"].selected',
+                'a[data-test-id="conversation"][aria-current="page"]',
+                'a[data-testid="conversation"][aria-current="page"]',
+                'a[data-test-id="conversation"][aria-selected="true"]',
+                'a[data-testid="conversation"][aria-selected="true"]',
+                'a[data-test-id="conversation"].active',
+                'a[data-testid="conversation"].active',
+                'a[data-test-id="conversation"]',
+                'a[data-testid="conversation"]',
+            ];
+            for (const sel of candidates) {
+                try {
+                    const el = doc.querySelector(sel);
+                    if (el) return el;
+                } catch (_) {}
+            }
+            return null;
         };
+        const selectedConversation = await waitFor(findSelectedConversation, 3000);
+        if (!selectedConversation) {
+            // 找不到时 dump DOM 线索
+            console.warn('[Gemini-Forget] 未找到会话，DOM dump:',
+                Array.from(doc.querySelectorAll('a[href*="/app/"]')).slice(0, 3).map(el => ({
+                    tag: el.tagName, testid: el.getAttribute('data-testid'),
+                    'test-id': el.getAttribute('data-test-id'),
+                    class: (el.className || '').toString().slice(0, 60),
+                }))
+            );
+            throw new Error('找不到当前会话');
+        }
 
-        const menuBtn = doc.querySelector('button[aria-label*="Menu" i], button[aria-label*="菜单" i]');
-        if (menuBtn) humanClick(menuBtn);
-        await new Promise(r => setTimeout(r, 600));
+        // 3. 找"⋮"操作按钮：兄弟、祖先容器兜底
+        const findActionsMenu = () => {
+            let btn = selectedConversation.parentElement?.querySelector('[data-test-id="actions-menu-button"], [data-testid="actions-menu-button"]');
+            if (btn) return btn;
+            const container = selectedConversation.closest('li, [data-test-id="conversation-list-item"], [data-testid="conversation-list-item"]')
+                || selectedConversation.parentElement;
+            if (container) {
+                btn = container.querySelector('[data-test-id="actions-menu-button"], [data-testid="actions-menu-button"]');
+                if (btn) return btn;
+            }
+            return doc.querySelector('[data-test-id="actions-menu-button"], [data-testid="actions-menu-button"]');
+        };
+        const targetBtn = await waitFor(findActionsMenu, 2500);
+        if (!targetBtn) throw new Error('找不到操作菜单按钮');
+        humanClick(targetBtn);
 
-        const selectedConversation = doc.querySelector('a[data-test-id="conversation"].selected');
-        let targetBtn = (selectedConversation && selectedConversation.nextElementSibling) 
-            ? selectedConversation.nextElementSibling.querySelector('[data-test-id="actions-menu-button"]') 
-            : null;
+        // 4. 启动 confirm 弹窗 Observer + CSS 隐藏（边听边点 + 不让弹窗绘制到屏幕）
+        // 这是"闪烁消失"的关键：双层保险
+        log('Step 4: 启动 confirm 弹窗 Observer + 隐藏 CSS');
+        let confirmClicked = false;
+        let confirmObserver = null;
 
-        if (targetBtn) {
-            humanClick(targetBtn);
-            await new Promise(r => setTimeout(r, 400));
+        // 注入隐藏 CSS —— 排除 #gemini-confirm-dialog（扩展自己的弹窗不能误伤）
+        const oldHideStyle = doc.getElementById('gemini-forget-hide-dialogs');
+        if (oldHideStyle) oldHideStyle.remove();
+        const hideStyle = doc.createElement('style');
+        hideStyle.id = 'gemini-forget-hide-dialogs';
+        hideStyle.textContent = `
+            [role="dialog"]:not(#gemini-confirm-dialog),
+            [role="alertdialog"]:not(#gemini-confirm-dialog),
+            [aria-modal="true"]:not(#gemini-confirm-dialog),
+            dialog[open],
+            dialog:not(#gemini-confirm-dialog),
+            mat-dialog-container, md-dialog,
+            .mat-mdc-dialog-container,
+            .cdk-overlay-pane,
+            .cdk-overlay-container > * {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+        `;
+        (doc.head || doc.documentElement).appendChild(hideStyle);
 
-            const deleteBtn = doc.querySelector('[data-test-id="delete-button"]') || 
-                              Array.from(doc.querySelectorAll('[role="menuitem"]')).find(el => el.innerText.includes('Delete') || el.innerText.includes('删除'));
-            
-            if (deleteBtn) {
-                humanClick(deleteBtn);
-                await new Promise(r => setTimeout(r, 400));
-                
-                const confirmBtn = Array.from(doc.querySelectorAll('button')).find(b => 
-                    (b.innerText.includes('Delete') || b.innerText.includes('删除')) && b.offsetWidth > 0
-                );
-                
-                if (confirmBtn) {
-                    humanClick(confirmBtn);
-                    await new Promise(r => setTimeout(r, 500)); 
+        const dialogSelectors = [
+            '[role="dialog"]', '[role="alertdialog"]', '[aria-modal="true"]',
+            'dialog[open]', 'dialog',
+            'mat-dialog-container', 'md-dialog', '.mat-mdc-dialog-container',
+            '.cdk-overlay-pane', '.cdk-overlay-container > *',
+        ];
+        const tryClickConfirm = () => {
+            if (confirmClicked) return false;
+            let dialog = null;
+            for (const sel of dialogSelectors) {
+                try {
+                    const el = doc.querySelector(sel);
+                    if (el && el.id !== 'gemini-confirm-dialog') { dialog = el; break; }
+                } catch (_) {}
+            }
+            if (!dialog) return false;
+            const cands = dialog.querySelectorAll(
+                'button, [role="button"], a, md-text-button, mat-mdc-button, [mat-button], [mat-button-base]'
+            );
+            for (const el of cands) {
+                const txt = (el.innerText || el.textContent || '').trim();
+                const aria = (el.getAttribute('aria-label') || '').trim();
+                if (isDeleteText(txt) || isDeleteText(aria)) {
+                    // 【关键 bug 修复】：不再检查 offsetWidth/visible —— CSS display:none 会让
+                    // 按钮 offsetWidth=0，但这正是我们想要的状态（弹窗已藏，按钮被点掉 = 无感）
+                    confirmClicked = true;
+                    if (confirmObserver) { confirmObserver.disconnect(); confirmObserver = null; }
+                    log('  ✓ Observer 命中 confirm Delete 按钮：', { tag: el.tagName, txt: txt.slice(0, 30) });
+                    humanClick(el);
+                    return true;
                 }
             }
+            return false;
+        };
+        confirmObserver = new MutationObserver(tryClickConfirm);
+        confirmObserver.observe(doc.body || doc.documentElement, { childList: true, subtree: true });
+        log('  Observer 已挂载，监听 confirm 弹窗出现');
+
+        // 5. 找 Delete 项并点击
+        log('Step 5: 查找 ⋮ 菜单里的 Delete 项');
+        const findDeleteBtn = () => {
+            let btn = doc.querySelector('[data-test-id="delete-button"], [data-testid="delete-button"]');
+            if (btn) return btn;
+            const items = doc.querySelectorAll('[role="menuitem"], button, a, [role="button"]');
+            btn = Array.from(items).find(el => isDeleteText(el.innerText || el.textContent));
+            return btn || null;
+        };
+        const deleteBtn = await waitFor(findDeleteBtn, 2500);
+        if (!deleteBtn) {
+            if (confirmObserver) { confirmObserver.disconnect(); confirmObserver = null; }
+            throw new Error('找不到 Delete 菜单项');
+        }
+        log('  ✓ 找到 Delete 菜单项，准备点击');
+        humanClick(deleteBtn);
+
+        // 6. 等 Observer 命中 confirm 弹窗（最多 4 秒）
+        log('Step 6: 等待 Observer 命中 confirm 弹窗...');
+        const observerStart = Date.now();
+        while (!confirmClicked && Date.now() - observerStart < 4000) {
+            await new Promise(r => setTimeout(r, 40));
+        }
+        if (confirmObserver) { confirmObserver.disconnect(); confirmObserver = null; }
+        if (!confirmClicked) {
+            throw new Error('Observer 在 4 秒内未命中 confirm 弹窗（可能新版 DOM 改了）');
+        }
+        log('Step 7: 销毁已点击，等待云端响应...');
+
+        setBtnState('done');
+        // 1.5 秒后清理隐藏 CSS（确保删除操作完成 + 弹窗自然关闭后再放开）
+        setTimeout(() => {
+            const el = doc.getElementById('gemini-forget-hide-dialogs');
+            if (el) el.remove();
+        }, 1500);
+    } catch (error) {
+        console.warn('[Gemini-Forget] 销毁流程失败:', error);
+        setBtnState('error', error.message);
+        setTimeout(() => setBtnState('idle'), 3000);
+    } finally {
+        setTimeout(closeSidebar, 700);
+    }
+}
+
+// ==========================================
+// 主屏幕销毁入口（嵌在主屏时间轴的 destroy-fab 点击触发）
+// 调用 performDestroyOnDocument 对主屏 doc 走"打开菜单 → Delete → confirm"流程
+// 销毁成功后 Gemini 自身会在 SPA 内路由到首页（让 Angular Router 处理，保留侧栏）
+// ==========================================
+async function destroyMainConversation() {
+    const fab = document.getElementById('gemini-timeline-destroy-fab');
+    const originalHtml = fab ? fab.innerHTML : '';
+
+    try {
+        // 1) 检查主屏是否有对话可销毁
+        const hasMessages = document.querySelector('user-query, .query-content, [data-test-id="user-query"]');
+        if (!hasMessages) {
+            console.log('[Gemini Plugin] No active conversation to destroy.');
+            return;
+        }
+
+        // 2) 状态机：销毁中（按钮文字 + 禁用）
+        if (fab) {
+            fab.innerHTML = '<span style="font-size: 16px;">⏳</span> 销毁中...';
+            fab.style.pointerEvents = 'none';
+        }
+
+        // 3) 走与侧栏分支相同的销毁引擎（通用内核，传入主屏 doc + window）
+        // 主屏是真实 window，injectNavStyle: false —— 主屏不需要强制展开侧边栏
+        const result = await performDestroyOnDocument(document, window, { injectNavStyle: false });
+
+        if (result.success) {
+            // 4) 销毁成功后第一件事：强制刷新时间轴，把已销毁的节点清掉
+            renderTimeline();
+            console.log('[Gemini Plugin] ✓ 时间轴已刷新，清除已销毁节点');
+
+            // 5) 兜底策略：1.5 秒后若 URL 仍卡在已删除的会话路径，
+            //    用 SPA 友好的 pushState + popstate 触发 Angular Router 刷新
+            //    （不刷整页，所以侧栏 iframe 不会丢）
+            await new Promise(r => setTimeout(r, 1500));
+            if (/\/app\/[a-z0-9-]+/i.test(location.pathname)) {
+                try {
+                    const targetUrl = new URL('/app', location.origin);
+                    history.pushState({}, '', targetUrl.toString());
+                    window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+                } catch (e) {
+                    console.warn('[Gemini Plugin] SPA route fallback failed:', e);
+                }
+            }
+            // SPA 路由完成后再次刷新时间轴（处理 Angular Router 路由后的 DOM 更新）
+            setTimeout(renderTimeline, 500);
+        } else {
+            console.warn('[Gemini Plugin] Destroy failed, reason:', result.reason);
         }
     } catch (error) {
-        console.warn("Delete flow interrupted:", error);
+        console.warn('[Gemini Plugin] Main conversation destroy interrupted:', error);
     } finally {
-        if (forgetBtn) forgetBtn.innerHTML = '🗑️ 遗忘'; 
-        closeSidebar(); 
+        if (fab) {
+            fab.innerHTML = originalHtml;
+            fab.style.pointerEvents = '';
+        }
     }
 }
