@@ -681,6 +681,159 @@ function showConfirmDialog(actionType, customAction = null) {
 }
 
 // ==========================================
+// 3.5 Gemini 对话导出系统
+// ==========================================
+function getVisibleConversationQueries() {
+    const isVisibleConversationNode = (node) => {
+        if (!node) return false;
+        const container = node.closest('.user-message-container, .model-message-container, [data-message-author-role], message, .conversation-turn') || node;
+        const style = window.getComputedStyle(container);
+        return style.display !== 'none'
+            && style.visibility !== 'hidden'
+            && container.getClientRects().length > 0;
+    };
+    return Array.from(document.querySelectorAll('.query-text')).filter(isVisibleConversationNode);
+}
+
+function cleanExportText(text) {
+    return (text || '')
+        .replace(/You said/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function findResponseForQuery(queryElement, allResponses, nextQueryElement = null) {
+    return allResponses.find(responseElement => {
+        const isAfterQuery = Boolean(queryElement.compareDocumentPosition(responseElement) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (!isAfterQuery) return false;
+        if (!nextQueryElement) return true;
+        return Boolean(responseElement.compareDocumentPosition(nextQueryElement) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }) || null;
+}
+
+function collectGeminiConversation() {
+    const queries = getVisibleConversationQueries();
+    const responses = Array.from(document.querySelectorAll('message-content'));
+    return queries.map((queryElement, index) => {
+        const responseElement = findResponseForQuery(queryElement, responses, queries[index + 1]);
+        return {
+            index: index + 1,
+            question: cleanExportText(queryElement.innerText || queryElement.textContent),
+            answer: responseElement
+                ? cleanExportText(responseElement.innerText || responseElement.textContent)
+                : '',
+        };
+    }).filter(item => item.question || item.answer);
+}
+
+function getConversationTitleForExport() {
+    const titleNode = document.querySelector('[data-test-id="conversation-title"], [data-testid="conversation-title"]');
+    return cleanExportText(titleNode ? titleNode.innerText : '') || 'Gemini 对话导出';
+}
+
+function summarizeQuestions(conversation) {
+    return conversation
+        .map(item => item.question)
+        .filter(Boolean)
+        .slice(0, 12)
+        .map((question, index) => `${index + 1}. ${question.length > 120 ? question.slice(0, 120) + '...' : question}`)
+        .join('\n');
+}
+
+function buildFullMarkdownExport(conversation) {
+    const title = getConversationTitleForExport();
+    const exportedAt = new Date().toLocaleString();
+    const parts = [
+        `# ${title}`,
+        '',
+        `> 导出时间：${exportedAt}`,
+        `> 来源：${location.href}`,
+        '',
+    ];
+    conversation.forEach(item => {
+        parts.push(`## 第 ${item.index} 轮`, '');
+        parts.push('### 用户提问', '', item.question || '[空]', '');
+        parts.push('### Gemini 回答', '', item.answer || '[未找到回答]', '');
+    });
+    return parts.join('\n');
+}
+
+function buildProjectContextExport(conversation) {
+    const title = getConversationTitleForExport();
+    const exportedAt = new Date().toLocaleString();
+    const questions = summarizeQuestions(conversation);
+    const parts = [
+        `# 项目上下文：${title}`,
+        '',
+        `> 从 Gemini 对话导出，导出时间：${exportedAt}`,
+        `> 原始链接：${location.href}`,
+        '',
+        '## 项目背景',
+        '',
+        '以下内容来自一段 Gemini 对话，可作为后续项目启动、需求梳理或交接的上下文。',
+        '',
+        '## 已讨论的问题',
+        '',
+        questions || '- 暂无可识别的用户提问',
+        '',
+        '## 可直接交给新会话的启动提示',
+        '',
+        '请基于下面的原始对话记录，整理项目目标、关键约束、已达成决策、待确认问题和下一步执行计划。保留用户真实意图，避免引入对话中没有出现的新需求。',
+        '',
+        '## 原始对话记录',
+        '',
+    ];
+    conversation.forEach(item => {
+        parts.push(`### 第 ${item.index} 轮：用户`, '', item.question || '[空]', '');
+        parts.push(`### 第 ${item.index} 轮：Gemini`, '', item.answer || '[未找到回答]', '');
+    });
+    return parts.join('\n');
+}
+
+function downloadTextFile(filename, content, mimeType = 'text/markdown;charset=utf-8') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportGeminiConversation(mode) {
+    const conversation = collectGeminiConversation();
+    if (conversation.length === 0) {
+        alert('当前页面没有可导出的 Gemini 对话。');
+        return;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    if (mode === 'json') {
+        const payload = {
+            title: getConversationTitleForExport(),
+            source: location.href,
+            exportedAt: new Date().toISOString(),
+            conversation,
+        };
+        downloadTextFile(`gemini-conversation-${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+        return;
+    }
+    if (mode === 'full') {
+        downloadTextFile(`gemini-conversation-${stamp}.md`, buildFullMarkdownExport(conversation));
+        return;
+    }
+    downloadTextFile(`gemini-project-context-${stamp}.md`, buildProjectContextExport(conversation));
+}
+
+function toggleExportMenu(forceOpen = null) {
+    const menu = document.getElementById('gemini-timeline-export-menu');
+    if (!menu) return;
+    const shouldOpen = forceOpen === null ? !menu.classList.contains('show') : forceOpen;
+    menu.classList.toggle('show', shouldOpen);
+}
+
+// ==========================================
 // 4. 时间轴心跳引擎 v2.1
 // ==========================================
 let timelineContainer = null;
@@ -696,6 +849,12 @@ function renderTimeline() {
             <div id="gemini-timeline-track"></div>
             <div id="gemini-timeline-bottom-btn" class="gemini-timeline-action-btn" title="前往最新对话">↓</div>
             <div id="gemini-timeline-destroy-fab" title="销毁当前窗口会话（永久删除云端记录）"><span style="font-size: 16px;">🗑️</span> 销毁窗口</div>
+            <div id="gemini-timeline-export-fab" title="导出当前 Gemini 对话"><span style="font-size: 16px;">📦</span> 导出对话</div>
+            <div id="gemini-timeline-export-menu">
+                <button class="gemini-export-option" data-export-mode="context">项目上下文</button>
+                <button class="gemini-export-option" data-export-mode="full">完整 Markdown</button>
+                <button class="gemini-export-option" data-export-mode="json">JSON 数据</button>
+            </div>
             <div id="gemini-timeline-fab" title="主动开启平行搜索"><span style="font-size: 16px;">🔍</span> 平行搜索</div>
         `;
         
@@ -707,6 +866,25 @@ function renderTimeline() {
         // 1. 主动唤起搜索：传空字符串，打开搜索侧栏后由用户输入关键词
         document.getElementById('gemini-timeline-fab').addEventListener('click', () => {
             openSidebar('', 'search');
+        });
+
+        document.getElementById('gemini-timeline-export-fab').addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleExportMenu();
+        });
+
+        document.querySelectorAll('#gemini-timeline-export-menu .gemini-export-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleExportMenu(false);
+                exportGeminiConversation(option.getAttribute('data-export-mode'));
+            });
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('#gemini-timeline-export-fab') && !e.target.closest('#gemini-timeline-export-menu')) {
+                toggleExportMenu(false);
+            }
         });
 
         // 1.5 销毁主屏幕当前会话：弹出确认框，确认后物理删除
@@ -765,15 +943,7 @@ function renderTimeline() {
 
     if (isHoveringTimeline) return;
 
-    const isVisibleConversationNode = (node) => {
-        if (!node) return false;
-        const container = node.closest('.user-message-container, .model-message-container, [data-message-author-role], message, .conversation-turn') || node;
-        const style = window.getComputedStyle(container);
-        return style.display !== 'none'
-            && style.visibility !== 'hidden'
-            && container.getClientRects().length > 0;
-    };
-    const queries = Array.from(document.querySelectorAll('.query-text')).filter(isVisibleConversationNode);
+    const queries = getVisibleConversationQueries();
     const responses = Array.from(document.querySelectorAll('message-content'));
 
     if (queries.length === 0) {
@@ -789,7 +959,7 @@ function renderTimeline() {
     const chatData = [];
 
     queries.forEach((q, i) => {
-        const r = responses[i];
+        const r = findResponseForQuery(q, responses, queries[i + 1]);
         const qHeight = q.offsetHeight || 50;
         const rHeight = r ? r.offsetHeight : 50;
         const blockHeight = qHeight + rHeight + 60; 

@@ -375,11 +375,8 @@ body {
     transform: translateX(calc(-1 * var(--parallel-sidebar-width, 0px))) !important;
     
     top: 120px !important;
-    /* 【2026-06-04 激进布局 v2】：底部留 200px，时间轴整体上移，离 FAB 更远
-       —— 节点 0-98% + ↓ 按钮（容器内 +8） 占据容器内部
-       —— destroy-fab（容器外 顶 0）+ fab（容器外 -44）紧贴容器底
-       —— ↓ 按钮和 destroy-fab 间距 8px（之前 4px） */
-    bottom: 200px !important;
+    /* 底部留出操作胶囊组空间：销毁、导出、搜索三枚胶囊依附时间轴向下展开 */
+    bottom: 250px !important;
     width: 30px !important;
     
     /* 【核心修复 2】：祭出前端最高层级 2147483647，神挡杀神，绝对不会被任何侧边栏盖住 */
@@ -677,11 +674,12 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
 #gemini-timeline-top-btn { top: -64px; }
 #gemini-timeline-bottom-btn { bottom: -64px; }
 
-/* 💡 开启平行搜索胶囊：跟随时间轴，向左展开，右侧留出呼吸空间 */
-#gemini-timeline-fab {
+/* 时间轴底部胶囊组：跟随时间轴，向左展开，右侧留出呼吸空间 */
+#gemini-timeline-fab,
+#gemini-timeline-destroy-fab,
+#gemini-timeline-export-fab {
     position: absolute;
     right: 10px;
-    bottom: -160px;
     
     width: auto; 
     height: auto;
@@ -706,6 +704,10 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+#gemini-timeline-destroy-fab { bottom: -112px; }
+#gemini-timeline-export-fab { bottom: -158px; }
+#gemini-timeline-fab { bottom: -204px; }
+
 #gemini-timeline-fab:hover {
     /* 悬停时只做轻微的上浮，不再做全局放大，避免长胶囊放大带来的突兀感 */
     transform: translateY(-2px);
@@ -714,32 +716,11 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
     color: #0b57d0;
 }
 
-/* 🗑️ 销毁窗口胶囊：位于 ↓ 按钮下方，跟随时间轴，向左展开 */
-#gemini-timeline-destroy-fab {
-    position: absolute;
-    right: 10px;
-    bottom: -114px;
-
-    width: auto;
-    height: auto;
-    padding: 8px 16px;
-    border-radius: 24px;
-    white-space: nowrap;
-
-    background: var(--gemini-island-bg, rgba(255,255,255,0.85));
-    border: 1px solid var(--gemini-border, rgba(0,0,0,0.1));
-    color: var(--gemini-text-sub, #5f6368);
-
-    display: flex;
-    flex-direction: row-reverse;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    z-index: 20;
-    box-shadow: var(--gemini-shadow, 0 4px 16px rgba(0,0,0,0.1));
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+#gemini-timeline-export-fab:hover {
+    transform: translateY(-2px);
+    background: #e6f4ea;
+    border-color: #188038;
+    color: #188038;
 }
 
 #gemini-timeline-destroy-fab:hover {
@@ -749,8 +730,57 @@ body.parallel-open #gemini-main-floating-title { display: flex !important; }
     color: #d93025;
 }
 
+#gemini-timeline-export-menu {
+    position: absolute;
+    right: 10px;
+    bottom: -154px;
+    min-width: 168px;
+    padding: 6px;
+    border-radius: 12px;
+    background: var(--gemini-island-bg, rgba(255,255,255,0.95));
+    border: 1px solid var(--gemini-border, rgba(0,0,0,0.1));
+    box-shadow: var(--gemini-shadow, 0 8px 24px rgba(0,0,0,0.14));
+    backdrop-filter: blur(12px) saturate(180%);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 30;
+    transform: translateX(-112px) translateY(6px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#gemini-timeline-export-menu.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-112px) translateY(0);
+}
+
+.gemini-export-option {
+    border: none;
+    background: transparent;
+    color: var(--gemini-text-main, #1f1f1f);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.gemini-export-option:hover {
+    background: rgba(26, 115, 232, 0.1);
+    color: #0b57d0;
+}
+
 /* 【修复2：视觉减负】当平行窗口打开时，主页面的胶囊自动隐身退场 */
-body.parallel-open #gemini-timeline-fab {
+body.parallel-open #gemini-timeline-fab,
+body.parallel-open #gemini-timeline-export-fab,
+body.parallel-open #gemini-timeline-export-menu {
     opacity: 0 !important;
     visibility: hidden !important;
     pointer-events: none !important;
@@ -770,6 +800,9 @@ body.parallel-open #gemini-timeline-destroy-fab {
 @media (prefers-color-scheme: dark) {
     .gemini-timeline-action-btn:hover, #gemini-timeline-fab:hover {
         background: rgba(26, 115, 232, 0.2);
+    }
+    #gemini-timeline-export-fab:hover {
+        background: rgba(24, 128, 56, 0.2);
     }
     #gemini-timeline-destroy-fab:hover {
         background: rgba(217, 48, 37, 0.2);
